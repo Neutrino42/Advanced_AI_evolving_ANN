@@ -176,22 +176,24 @@ class Network:
                 #      reorganize:        [1, 1,       1, 0, 0, 0]
             if random.random() < num/hid_n_size:
                 # delete node
-                self.hidden_nodes = self.hidden_nodes[:i] + self.hidden_nodes[i+1:] +[0]
+                self.hidden_nodes = self.hidden_nodes[1:] + [0]
                 # delete connections and update matrices
                 # discard row i and column i
                 # Delete the i th column/row, then add one column/row of zeros before the last column/row of the original matrix
+
+                m_i = i + m  # convert index
                 #-----------update connection matrix--------------
                 tmp_mat = self.connect_mat
-                tmp_mat = np.delete(tmp_mat, i, 0)
+                tmp_mat = np.delete(tmp_mat, m_i, 0)
                 tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
-                tmp_mat = np.delete(tmp_mat, i, 1)
+                tmp_mat = np.delete(tmp_mat, m_i, 1)
                 self.connect_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
 
                 # -----------update weight matrix--------------
                 tmp_mat = self.weight_mat
-                tmp_mat = np.delete(tmp_mat, i, 0)
+                tmp_mat = np.delete(tmp_mat, m_i, 0)
                 tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
-                tmp_mat = np.delete(tmp_mat, i, 1)
+                tmp_mat = np.delete(tmp_mat, m_i, 1)
                 self.weight_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
 
                 self.node_num -= 1
@@ -208,8 +210,8 @@ class Network:
                 if self.hidden_nodes[parent_index] == 1:
                     break
 
-            # choose a vacant position to place the new node
-            new_index = self.hidden_nodes.index(0)
+            # insert the new node next to its parent
+            new_index = parent_index + 1
 
             self.hidden_nodes[new_index] = 1
             self.node_num += 1
