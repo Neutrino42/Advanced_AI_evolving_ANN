@@ -213,11 +213,12 @@ class Network:
             # insert the new node next to its parent
             new_index = parent_index + 1
 
-            self.hidden_nodes[new_index] = 1
+            self.hidden_nodes = [1] + self.hidden_nodes[:-1]
             self.node_num += 1
 
             self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
             self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
+            self.connect_mat[new_index, new_index] = 0
 
             # 从前面连过来的weight不变，往后连的weight都要变
             # edges from the beginning
