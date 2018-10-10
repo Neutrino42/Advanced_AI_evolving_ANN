@@ -25,6 +25,11 @@ class Network:
         self.node_num = m + 1
 
         # randomly generate hidden nodes
+        # the existing nodes will always be at the beginning of the list
+        tmp = random.randint(0, N)
+        self.node_num += tmp
+        self.hidden_nodes = [1 for i in range(tmp)]
+        self.hidden_nodes += [0 for i in range(N-tmp)]
         '''
         for i in range(N):
             if random.random() < 0.5:
@@ -146,19 +151,59 @@ class Network:
         pass
 
     def delete_nodes(self, num):
+        """
+
+        :param num: max number of nodes to be deleted
+        :return: number of nodes deleted
+        """
         count = 0
-        size = self.node_num - m - 1
-        for i in range(len(self.hidden_nodes)):
+        hid_n_size = self.node_num - m - 1 # number of hidden nodes
+        for i in range(hid_n_size):
             if count == num:
                 break
                 # s 个里面取 num 个，每一个的概率是 p = 1-C(s-1,num)/C(s,num) = num/s,
                 # 这样，每个球有p的概率被取到，取到球的总数的期望为s*p = num
-            if self.hidden_nodes[i] == 1 and random.random() < num/size:
-                self.hidden_nodes[i] = 0
-                self.connect_mat[i+m][:] = 0
-                self.connect_mat[:][i+m] = 0
+
+                # If a node is deleted:
+                # reorganize corresponding arrays to maintain the state
+                # where valid nodes (represented by 1) are arranged to the head-most part of the arrays
+                # e.g. hidden_nodes:
+                #      before:            [1, 1,       1, 1, 0, 0]
+                #      after deletion:    [1, null,    1, 1, 0, 0]
+                #                             |        |  |
+                #                             o<------(1  1)
+                #                             |        |
+                #      reorganize:        [1, 1,       1, 0, 0, 0]
+            if random.random() < num/hid_n_size:
+                # delete node
+                self.hidden_nodes = self.hidden_nodes[:i] + self.hidden_nodes[i+1:] +[0]
+                # delete connections and update matrices
+                # discard row i and column i
+                # Delete the i th column/row, then add one column/row of zeros before the last column/row of the original matrix
+                #-----------update connection matrix--------------
+                a = self.connect_mat[:, :i]
+                b = self.connect_mat[:, i+1:-1]
+                c = self.connect_mat[:, -1]
+                tmp_mat = np.column_stack([a, b, np.zeros(self.dim), c])
+                a = tmp_mat[:i, :]
+                b = tmp_mat[i+1:-1, :]
+                c = tmp_mat[-1, :]
+                self.connect_mat = np.row_stack([a, b, np.zeros(self.dim), c])
+
+                # -----------update weight matrix--------------
+                a = self.weight_mat[:, :i]
+                b = self.weight_mat[:, i + 1:-1]
+                c = self.weight_mat[:, -1]
+                tmp_mat = np.column_stack([a, b, np.zeros(self.dim), c])
+                a = tmp_mat[:i, :]
+                b = tmp_mat[i + 1:-1, :]
+                c = tmp_mat[-1, :]
+                self.weight_mat = np.row_stack([a, b, np.zeros(self.dim), c])
+
                 self.node_num -= 1
                 count += 1
+        return count
+
 
     def cell_div(self, alpha):
         if self.hidden_nodes.count(0) > 0:
@@ -174,15 +219,15 @@ class Network:
             self.hidden_nodes[new_index] = 1
             self.node_num += 1
 
-            self.connect_mat[new_index][:] = self.connect_mat[parent_index][:]
-            self.connect_mat[:][new_index] = self.connect_mat[:][parent_index]
+            self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
+            self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
 
             # 从前面连过来的weight不变，往后连的weight都要变
             # edges from the beginning
-            self.weight_mat[new_index][:parent_index+1] = alpha * self.weight_mat[parent_index][:parent_index+1]
+            self.weight_mat[new_index, :parent_index+1] = alpha * self.weight_mat[parent_index, :parent_index+1]
             # edges connecting forward
-            self.weight_mat[parent_index+1:][new_index] = alpha * self.weight_mat[parent_index+1:][parent_index]
-            self.weight_mat[parent_index+1:][parent_index] = (1+alpha) * self.weight_mat[parent_index+1:][parent_index]
+            self.weight_mat[parent_index+1:, new_index] = alpha * self.weight_mat[parent_index+1:, parent_index]
+            self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
 
 
 
