@@ -207,7 +207,7 @@ class Network:
             # randomly choose a node to duplicate
             while True:
                 parent_index = m + random.randint(0,len(self.hidden_nodes))
-                if self.hidden_nodes[parent_index] == 1:
+                if self.hidden_nodes[parent_index-m] == 1:
                     break
 
             # insert the new node next to its parent
@@ -216,11 +216,24 @@ class Network:
             self.hidden_nodes = [1] + self.hidden_nodes[:-1]
             self.node_num += 1
 
-            self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
-            self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
+            # Update connection and weight matrices
+            tmp_mat = self.connect_mat
+            tmp_mat = np.delete(tmp_mat, -2, 0)
+            tmp_mat = np.insert(tmp_mat, new_index, self.connect_mat[parent_index, :], 0)
+            tmp_mat = np.delete(tmp_mat, -2, 1)
+            self.connect_mat = np.insert(tmp_mat, new_index, self.connect_mat[:, parent_index], 1)
+
+            #self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
+            #self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
             self.connect_mat[new_index, new_index] = 0
 
             # 从前面连过来的weight不变，往后连的weight都要变
+            tmp_mat = self.weight_mat
+            tmp_mat = np.delete(tmp_mat, -2, 0)
+            tmp_mat = np.insert(tmp_mat, new_index, self.weight_mat[parent_index, :], 0)
+            tmp_mat = np.delete(tmp_mat, -2, 1)
+            self.weight_mat = np.insert(tmp_mat, new_index, self.weight_mat[:, parent_index], 1)
+
             # edges from the beginning
             self.weight_mat[new_index, :parent_index+1] = alpha * self.weight_mat[parent_index, :parent_index+1]
             # edges connecting forward
