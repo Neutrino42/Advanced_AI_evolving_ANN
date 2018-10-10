@@ -25,7 +25,7 @@ class Network:
         self.node_num = m + 1
 
         # randomly generate hidden nodes
-        # the existing nodes will always be at the beginning of the list
+        # the valid hidden nodes will always be at the beginning of the list
         tmp = random.randint(0, N)
         self.node_num += tmp
         self.hidden_nodes = [1 for i in range(tmp)]
@@ -181,24 +181,18 @@ class Network:
                 # discard row i and column i
                 # Delete the i th column/row, then add one column/row of zeros before the last column/row of the original matrix
                 #-----------update connection matrix--------------
-                a = self.connect_mat[:, :i]
-                b = self.connect_mat[:, i+1:-1]
-                c = self.connect_mat[:, -1]
-                tmp_mat = np.column_stack([a, b, np.zeros(self.dim), c])
-                a = tmp_mat[:i, :]
-                b = tmp_mat[i+1:-1, :]
-                c = tmp_mat[-1, :]
-                self.connect_mat = np.row_stack([a, b, np.zeros(self.dim), c])
+                tmp_mat = self.connect_mat
+                tmp_mat = np.delete(tmp_mat, i, 0)
+                tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
+                tmp_mat = np.delete(tmp_mat, i, 1)
+                self.connect_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
 
                 # -----------update weight matrix--------------
-                a = self.weight_mat[:, :i]
-                b = self.weight_mat[:, i + 1:-1]
-                c = self.weight_mat[:, -1]
-                tmp_mat = np.column_stack([a, b, np.zeros(self.dim), c])
-                a = tmp_mat[:i, :]
-                b = tmp_mat[i + 1:-1, :]
-                c = tmp_mat[-1, :]
-                self.weight_mat = np.row_stack([a, b, np.zeros(self.dim), c])
+                tmp_mat = self.weight_mat
+                tmp_mat = np.delete(tmp_mat, i, 0)
+                tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
+                tmp_mat = np.delete(tmp_mat, i, 1)
+                self.weight_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
 
                 self.node_num -= 1
                 count += 1
@@ -206,6 +200,7 @@ class Network:
 
 
     def cell_div(self, alpha):
+        # add node only when there is vacant position
         if self.hidden_nodes.count(0) > 0:
             # randomly choose a node to duplicate
             while True:
