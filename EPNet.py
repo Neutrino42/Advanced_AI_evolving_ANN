@@ -25,6 +25,9 @@ class Network:
         self.node_num = m + 1
         self.X = np.zeros(self.dim)
         self.net = np.zeros(self.dim)
+        # Feedback of net, which is the gradient of Loss function respect to self.net
+        self.F_net = np.zeros(self.dim)
+        self.F_weight = np.zeros([self.dim, self.dim])
 
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
@@ -141,8 +144,22 @@ class Network:
         return E #################????
 
 
-    def back_prop(self):
-        pass
+    def back_prop(self, input_set, desired_output):
+        """
+        This BP is calculated using one training sample
+        :param input_set:
+        :param desired_output:
+        :return: F_weight(input_set), gradient of Loss function respect to training sample input_set
+        """
+        y_hat = self.feedforward(input_set)
+        F_y_hat = np.zeros(self.dim)
+        F_y_hat[-1] = y_hat - desired_output
+        tril_conn = np.tril(self.connect_mat, k=-1)  # lower-triagularize the connection matrix
+        for i in range(self.dim-1, -1, -1): # from self.dim-1 to 0 (boundary included)
+            self.F_net = sigmoid_prime(self.net) * (F_y_hat + np.dot((tril_conn * self.weight_mat).transpose(), self.F_net))
+        a = np.reshape(self.F_net, [len(self.F_net), 1])
+        b = np.reshape(self.F_net, [1, len(self.F_net)])
+        return np.dot(a, b)
 
 
     def train(self, training_set):
