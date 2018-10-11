@@ -28,6 +28,7 @@ class Network:
         # Feedback of net, which is the gradient of Loss function respect to self.net
         self.F_net = np.zeros(self.dim)
         self.F_weight = np.zeros([self.dim, self.dim])
+        self.test = np.zeros([self.dim, self.dim])  # the importance for each connection
 
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
@@ -162,8 +163,18 @@ class Network:
         return np.dot(a, b)
 
 
-    def train(self, training_set):
-        pass
+    def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
+        weight_history = np.zeros(len(training_set), self.dim, self.dim)
+        test = np.zeros([self.dim, self.dim])
+        for x, y, i in zip(training_set, output_set, range(len(training_set))):
+            gradient_mat = self.back_prop(x, y)
+            self.weight_mat -= learning_rate * gradient_mat # update weight
+            weight_history[i] = copy.deepcopy(self.weight_mat)
+        weight_sum = weight_history.sum(0)
+        avg = weight_sum / weight_history.shape[0]
+        self.test = weight_sum / np.sqrt( np.square(weight_history-avg).sum(0) )
+        # ?????????
+
 
     def SA_train(self, training_set):
         pass
@@ -174,7 +185,13 @@ class Network:
     def add_connection(self):
         pass
 
-    def delete_conn(self):
+    def delete_conn(self, max_num):
+        """
+        Delete based on self.test, which records the importacne of each connection
+        :return:
+        """
+
+
         pass
 
     def delete_nodes(self, num):
@@ -344,7 +361,7 @@ def main():
                     population[-1] = offspring
                     continue
                 else: # delete connections
-                    offspring.calc_approx_impt() #######
+                    #offspring.calc_approx_impt() #######
                     offspring.delete_conn()
                     ###########
                     #############
