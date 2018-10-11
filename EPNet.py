@@ -23,6 +23,8 @@ class Network:
         self.weight_mat = np.zeros([self.dim, self.dim]) # real number, size: (m + N + n)*(m + N + n)
         self.hidden_nodes = [] # 1 or 0, size: 1*N
         self.node_num = m + 1
+        self.X = np.zeros(self.dim)
+        self.net = np.zeros(self.dim)
 
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
@@ -106,14 +108,22 @@ class Network:
     # return: scalar
     # 可以改成输入多个test case，用矩阵运算
     def feedforward(self, input_set):
-        X = [i for i in input_set]  # deep copy
-
-        for i in range(len(self.hidden_nodes)+1):
-            tmp = 0
-            for j in range(m+i):
-                tmp += self.weight_mat[j][i] * X[i]
-            X.append(sigmoid(tmp))
-        return X[-1]
+        #X = [i for i in input_set]  # deep copy
+        self.X[:len(input_set)] = input_set
+        #net = [0 for i in input_set]
+        #for i in range(m, self.dim):
+        #    tmp = 0
+        #    for j in range(i):
+        #        tmp += self.weight_mat[i][j] * X[i]
+        #    net.append(tmp)
+        #    X.append(sigmoid(tmp))
+        ############################################## 可以在初始化的时候就设置weight matrix为下三角
+        tril_conn = np.tril(self.connect_mat, k=-1)  # lower-triagularize the connection matrix
+        for i in range(m, self.dim):
+            self.net[i] = np.dot((tril_conn[i]*self.weight_mat[i]), self.X) #######
+            self.X[i] = sigmoid(self.net[i])
+        ################
+        return self.X[-1]
 
 
     def calc_error(self, test_set, desired_out):
