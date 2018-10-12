@@ -187,12 +187,21 @@ class Network:
 
     def delete_conn(self, max_num):
         """
-        Delete based on self.test, which records the importacne of each connection
+        Delete based on self.test, which records the importance of each connection
         :return:
         """
+        # sort from smallest to largest
+        arg_sorted_mat = (np.tril(self.connect_mat, k=-1) * self.test).flatten().argsort()
+        # selection ---------------------------- need modification
+        for index in arg_sorted_mat[:random.randint(1, max_num)]:
+            x = index // self.dim
+            y = index % self.dim
+            self.connect_mat[x,y] = 0
+            self.connect_mat[y,x] = 0
+            self.weight_mat[x,y] = 0
+            self.weight_mat[y,x] = 0
 
 
-        pass
 
     def delete_nodes(self, num):
         """
@@ -283,7 +292,6 @@ class Network:
             # edges connecting forward
             self.weight_mat[parent_index+1:, new_index] = alpha * self.weight_mat[parent_index+1:, parent_index]
             self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
-
 
 
 
