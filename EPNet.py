@@ -333,8 +333,18 @@ def choose(sorted_popu):
     return parent, p_index
 
 
+def training_set_init(dim):
+    """
 
-
+    :param dim: dimension of the problem
+    :return: x: all the combination. y: desired output for each case in x
+    """
+    rows = 2**dim
+    x = np.zeros([rows, dim])
+    for col in range(x.shape[1]):
+        x[:, col] = [i // (2 ** (dim - col - 1)) % 2 for i in range(rows)]
+    y = (x.sum(1) + 1)%2
+    return x, y
 
 def main():
     M = 20
