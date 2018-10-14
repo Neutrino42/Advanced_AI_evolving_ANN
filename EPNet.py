@@ -164,7 +164,7 @@ class Network:
 
 
     def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
-        weight_history = np.zeros(len(training_set), self.dim, self.dim)
+        weight_history = np.zeros([len(training_set), self.dim, self.dim])
         test = np.zeros([self.dim, self.dim])
         for x, y, i in zip(training_set, output_set, range(len(training_set))):
             gradient_mat = self.back_prop(x, y)
@@ -172,7 +172,9 @@ class Network:
             weight_history[i] = copy.deepcopy(self.weight_mat)
         weight_sum = weight_history.sum(0)
         avg = weight_sum / weight_history.shape[0]
-        self.test = weight_sum / np.sqrt( np.square(weight_history-avg).sum(0) )
+        sqrt_sum = np.sqrt( np.square(weight_history-avg).sum(0))
+        # set the zero terms to 1 to avoid division by zero
+        self.test = weight_sum / np.where(sqrt_sum==0, 1, sqrt_sum)
         # ?????????
 
 
@@ -256,10 +258,10 @@ class Network:
 
     def cell_div(self, alpha):
         # add node only when there is vacant position
-        if self.hidden_nodes.count(0) > 0:
+        if self.hidden_nodes.count(1) > 0:
             # randomly choose a node to duplicate
             while True:
-                parent_index = m + random.randint(0,len(self.hidden_nodes))
+                parent_index = m + random.randint(0,len(self.hidden_nodes)-1)
                 if self.hidden_nodes[parent_index-m] == 1:
                     break
 
@@ -288,9 +290,9 @@ class Network:
             self.weight_mat = np.insert(tmp_mat, new_index, self.weight_mat[:, parent_index], 1)
 
             # edges from the beginning
-            self.weight_mat[new_index, :parent_index+1] = alpha * self.weight_mat[parent_index, :parent_index+1]
+            self.weight_mat[new_index, :parent_index+1] = -alpha * self.weight_mat[parent_index, :parent_index+1]
             # edges connecting forward
-            self.weight_mat[parent_index+1:, new_index] = alpha * self.weight_mat[parent_index+1:, parent_index]
+            self.weight_mat[parent_index+1:, new_index] = -alpha * self.weight_mat[parent_index+1:, parent_index]
             self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
 
 
@@ -348,73 +350,84 @@ def training_set_init(dim):
 
 def main():
     M = 20
-    training_set = np.zeros() ################
-    population, is_success, error = population_init(M, test_set, desired_out)
+    learning_rate = 0.3 ###########################
+    training_set, output_set= training_set_init(5)
+    test_set = training_set ################
+    test_out = output_set ##################
+    population, is_success, error = population_init(M, test_set, test_out)
     while(True):
         #选parent
         error_sort(population, is_success, error)
         parent, p_index = choose(population)
         offspring = copy.deepcopy(parent)
         if is_success[p_index] == 1:
-            parent.train(training_set) ########################
-            error[p_index] = parent.calc_error(test_set) ##############
+            parent.train( training_set, output_set, learning_rate) ########################
+            error[p_index] = parent.calc_error(test_set, test_out) ##############
+            print(1)
             continue
         else: # parent failure, train with SA
             error_before = error[p_index]
-            offspring.SA_train(training_set)
-            error_after = offspring.calc_error(test_set)
-            if error_before-error_after > error_before * 0.2:
+            offspring.train( training_set, output_set, learning_rate)
+            error_after = offspring.calc_error(test_set, test_out)
+            if error_before-error_after > error_before * 0.1:
                 # replace the parent
                 population[p_index] = offspring
                 error[p_index] = error_after
                 is_success[p_index] = True
+                print(2)
                 continue
             else: # delete nodes
                 offspring.delete_nodes(n) # n 不能比MAX_HID_NODE大
-                offspring.train(training_set)
-                error_after = offspring.calc_error(test_set)
+                offspring.train( training_set, output_set, learning_rate)
+                error_after = offspring.calc_error(test_set, test_out)
+                print(3)
                 # if better than the worst one, replace it
                 if error_after < error[-1]:
                     error[-1] = error_after
                     population[-1] = offspring
+                    print(4)
                     continue
                 else: # delete connections
                     #offspring.calc_approx_impt() #######
-                    offspring.delete_conn()
+                    offspring.delete_conn(3)
                     ###########
                     #############
                     ###########
-                    offspring.train(training_set)
-                    error_after = offspring.calc_error(test_set)
+                    offspring.train( training_set, output_set, learning_rate)
+                    error_after = offspring.calc_error(test_set, test_out)
+                    print(5)
                     # if better than the worst one, replace it
                     if error_after < error[-1]:
                         error[-1] = error_after
                         population[-1] = offspring
+                        print(6)
                         continue
                     else: # add connections and nodes
                         offspring2 = copy.deepcopy(offspring)
                         offspring.add_connection()#########
                         #################
                         #################
-                        offspring2.cell_div() ##########
+                        offspring2.cell_div(-0.4) ##########
                         #################
                         ###############
                         ###############
-                        offspring.train(training_set)
-                        offspring2.train(training_set)
-                        error_after = offspring.calc_error(test_set)
-                        error_after_2 = offspring2.calc_error(test_set)
-
+                        offspring.train( training_set, output_set, learning_rate)
+                        offspring2.train( training_set, output_set, learning_rate)
+                        error_after = offspring.calc_error(test_set, test_out)
+                        error_after_2 = offspring2.calc_error(test_set, test_out)
+                        print(7)
                         # replace the worst in one the population
                         if error_after < error_after_2:
                             population[-1] = offspring
                             error[-1] = error_after
+                            print(8)
                         else:
                             population[-1] = offspring2
                             error[-1] = error_after_2
+                            print(9)
 
     output_net = population[0]
-    output_net.train(training_set)
+    output_net.train( training_set, output_set, learning_rate)
 
 
 
@@ -426,4 +439,15 @@ def main():
 
 
 if __name__ == '__main__':
+
     main()
+
+    M = 20
+    learning_rate = 0.3  ###########################
+    training_set, output_set = training_set_init(5)
+    test_set = training_set  ################
+    test_out = output_set  ##################
+    population, is_success, error = population_init(M, test_set, test_out)
+    parent, p_index = choose(population)
+    offspring = copy.deepcopy(parent)
+    offspring.cell_div(-0.4)
