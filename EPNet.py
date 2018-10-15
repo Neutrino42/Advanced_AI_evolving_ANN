@@ -32,32 +32,32 @@ class Network:
 
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
-        tmp = random.randint(0, N)
+        tmp = random.randint(1, N)
         self.node_num += tmp
         self.hidden_nodes = [1 for i in range(tmp)]
         self.hidden_nodes += [0 for i in range(N-tmp)]
-        '''
-        for i in range(N):
-            if random.random() < 0.5:
-                self.hidden_nodes.append(0)
-            else:
-                self.hidden_nodes.append(1)
-                self.node_num += 1
-        '''
-        edge_num = self.node_num*(self.node_num - 1) / 2 * edge_dens
-        print(edge_num)
+
+        edge_num = (self.node_num*(self.node_num - 1)/2 - (m*(m-1)/2)) * edge_dens
         count = 0
 
         # Add connections for input and output nodes to other nodes.
-        for i in (list(range(m)) + [self.dim-1]):
+        # Add to output node first
+        node_idx = random.randint(0, self.dim - 2)
+        self.connect_mat[self.dim-1][node_idx] = 1
+        self.connect_mat[node_idx][self.dim-1] = 1  ######################
+        self.weight_mat[self.dim-1][node_idx] = random.random() / 4  ######################
+        self.weight_mat[node_idx][self.dim-1] = self.weight_mat[self.dim-1][node_idx]
+        count += 1
+        # Then add to input nodes
+        for i in range(m):
 
             is_added = False
 
             while not is_added:
                 # randomly pick a node
-                node_idx = random.randint(0, self.dim-1)
+                node_idx = random.randint(m, self.dim-1)
                 # Check its existence, especially when it may be a hidden node
-                if m <= node_idx < self.dim-1:
+                if node_idx != self.dim-1:
                     if self.hidden_nodes[node_idx - m] == 0:
                         continue
 
@@ -73,19 +73,20 @@ class Network:
 
                 count += 1
                 is_added = True
-        print(self.connect_mat)
+        #print(self.connect_mat)
 
         # 接着加新的edges
         while count < edge_num:
-
+            print(count, edge_num)
             is_added = False
 
             while not is_added:
-                idx_1 = random.randint(0, self.dim - 1)
-                idx_2 = random.randint(0, self.dim - 1)
-                #print(idx_1, idx_2)
+                sample_list = [i for i in range(self.node_num -1)] + [self.dim-1]
+                idx_1, idx_2 = random.sample(sample_list, 2)
                 # Check their existence, especially when they may be a hidden node
                 if idx_1 == idx_2:
+                    continue
+                if idx_1 < m and idx_2 < m:
                     continue
                 if m <= idx_1 < self.dim - 1:
                     if self.hidden_nodes[idx_1 - m] == 0:
@@ -105,6 +106,7 @@ class Network:
                 self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
                 count += 1
                 is_added = True
+        print(self.connect_mat)
 
 
 
@@ -156,20 +158,28 @@ class Network:
         F_y_hat = np.zeros(self.dim)
         F_y_hat[-1] = y_hat - desired_output
         tril_conn = np.tril(self.connect_mat, k=-1)  # lower-triagularize the connection matrix
-        for i in range(self.dim-1, -1, -1): # from self.dim-1 to 0 (boundary included)
-            self.F_net = sigmoid_prime(self.net) * (F_y_hat + np.dot((tril_conn * self.weight_mat).transpose(), self.F_net))
+        # filter only the valid nodes
+        s_prime_net = sigmoid_prime(self.net) * ([0 for k in range(m)] + self.hidden_nodes + [1])
+        for i in range(self.dim-1, m-1, -1): # from self.dim-1 to m (boundary included)
+            #print(sigmoid_prime(self.net))
+            self.F_net = s_prime_net * (F_y_hat + np.dot((tril_conn * self.weight_mat).transpose(), self.F_net))
         a = np.reshape(self.F_net, [len(self.F_net), 1])
-        b = np.reshape(self.F_net, [1, len(self.F_net)])
-        return np.dot(a, b)
+        b = np.reshape(self.X, [1, len(self.X)])
+        gradient = np.tril(np.dot(a, b), k=-1)
+        return gradient
 
 
     def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
         weight_history = np.zeros([len(training_set), self.dim, self.dim])
         test = np.zeros([self.dim, self.dim])
+        print(self.weight_mat)
+
         for x, y, i in zip(training_set, output_set, range(len(training_set))):
             gradient_mat = self.back_prop(x, y)
             self.weight_mat -= learning_rate * gradient_mat # update weight
             weight_history[i] = copy.deepcopy(self.weight_mat)
+        print(self.weight_mat)
+
         weight_sum = weight_history.sum(0)
         avg = weight_sum / weight_history.shape[0]
         sqrt_sum = np.sqrt( np.square(weight_history-avg).sum(0))
@@ -323,16 +333,16 @@ def error_sort(population, is_success, error):
 def choose(sorted_popu):
     M = len(sorted_popu)
     # initialize return values
-    p_index = 0
-    parent = sorted_popu[p_index]
+    p_idx = 0
+    parent_c = sorted_popu[p_idx]
     for i in range(M):
         # probability for choosing (M-j)th individual:
         # P(M-j) = j/sum(1 to M)
         if random.random() < (M-i)/((1+M)*M/2):
-            p_index = i
-            parent = sorted_popu[p_index]
+            p_idx = i
+            parent_c = sorted_popu[p_idx]
             break
-    return parent, p_index
+    return parent_c, p_idx
 
 
 def training_set_init(dim):
@@ -367,7 +377,7 @@ def main():
             continue
         else: # parent failure, train with SA
             error_before = error[p_index]
-            offspring.train( training_set, output_set, learning_rate)
+      #      offspring.SA_train( training_set, output_set, learning_rate)
             error_after = offspring.calc_error(test_set, test_out)
             if error_before-error_after > error_before * 0.1:
                 # replace the parent
