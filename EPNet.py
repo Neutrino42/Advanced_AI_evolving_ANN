@@ -11,6 +11,8 @@ n = 1  # output nodes number, by default, this variable will not be used.
 
 MAX_HID_NODES = 5
 density = 0.75
+epoch = 500
+
 
 class Network:
 
@@ -20,7 +22,7 @@ class Network:
 
         self.dim = m + N + 1
         self.connect_mat = np.zeros([self.dim, self.dim]) # 1 or 0, size: (m + N + n)*(m + N + n), lower triagular
-        self.weight_mat = np.zeros([self.dim, self.dim]) # real number, size: (m + N + n)*(m + N + n), lower triagular
+        self.weight_mat = np.random.standard_normal([self.dim, self.dim]) # real number, size: (m + N + n)*(m + N + n), lower triagular
         self.hidden_nodes = [] # 1 or 0, size: 1*N
         self.node_num = m + 1
         self.X = np.zeros(self.dim)
@@ -77,7 +79,6 @@ class Network:
 
         # 接着加新的edges
         while count < edge_num:
-            print(count, edge_num)
             is_added = False
 
             while not is_added:
@@ -110,7 +111,7 @@ class Network:
         # lower-triagularize the two matrices
         self.connect_mat = np.tril(self.connect_mat, k=-1)
         self.weight_mat = np.tril(self.weight_mat, k=-1)
-        print(self.connect_mat)
+        #print(self.connect_mat)
 
 
 
@@ -137,8 +138,15 @@ class Network:
         for i in test_set:
             tmp_out.append(self.feedforward(i))
         tmp_out = np.array(tmp_out)
-        E = 100 * ((tmp_out.max()-tmp_out.min()) * ((tmp_out-np.array(desired_out))**2).sum() )/(len(desired_out)*1)
+        E = 100 * ( ((tmp_out-np.array(desired_out))**2).sum() )/(len(desired_out)*1)
         return E #################????
+
+
+    def get_answers(self, test_set):
+        tmp_out = []
+        for i in test_set:
+            tmp_out.append(self.feedforward(i))
+        return np.array(tmp_out)
 
 
     def back_prop(self, input_set, desired_output):
@@ -164,7 +172,6 @@ class Network:
 
     def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
         weight_history = np.zeros([len(training_set), self.dim, self.dim])
-        test = np.zeros([self.dim, self.dim])
 
         for x, y, i in zip(training_set, output_set, range(len(training_set))):
             gradient_mat = self.back_prop(x, y)
@@ -178,9 +185,50 @@ class Network:
         self.test = weight_sum / np.where(sqrt_sum==0, 1, sqrt_sum)
         # ?????????
 
+    def epoch_train(self, training_set, output_set, eta, epoch):
+        error_before = self.calc_error(training_set, output_set)
+        weight_copy = copy.deepcopy(self.weight_mat)
 
-    def SA_train(self, training_set):
-        pass
+        for i in range(1, epoch+1):
+            self.train(training_set, output_set, eta)
+            # check error every 10 epochs
+            if i % (epoch//15) == 0:
+                error_after = self.calc_error(training_set, output_set)
+                if error_after <= error_before:
+                    eta = eta*1.2
+                    error_before = error_after
+                    weight_copy = copy.deepcopy(self.weight_mat)
+                else:
+                    eta = eta*0.8
+                    # restore the previous weight
+                    self.weight_mat = copy.deepcopy(weight_copy)
+        return self.calc_error(training_set, output_set)
+
+
+    def SA_train(self, test_set, output_set):
+        T = 3000
+        epo = 200
+        while T > 10:
+            for i in range(epo):
+                weight_copy = copy.deepcopy(self.weight_mat)
+
+                old_error = self.calc_error(test_set, output_set)
+
+                perturb = np.random.standard_normal([self.dim, self.dim])
+                perturb = np.tril(perturb, k=-1)
+                self.weight_mat += perturb
+
+                new_error = self.calc_error(test_set, output_set)
+                delta_E = new_error - old_error
+                if delta_E < 0:
+                    pass
+                else:
+                    if random.random() < np.exp(-delta_E/T):
+                        pass
+                    else:
+                        self.weight_mat = weight_copy
+            T = 0.9*T
+        return self.calc_error(test_set, output_set)
 
     def calc_approx_impt(self):
         pass
@@ -371,37 +419,38 @@ def main():
     test_set = training_set ################
     test_out = output_set ##################
     population, is_success, error = population_init(M, test_set, test_out)
-    while(True):
+    for t in range(100):
         #选parent
-        error_sort(population, is_success, error)
+        population, is_success, error = error_sort(population, is_success, error)
         parent, p_index = choose(population)
+        print("epoch: {}. parent @ {}".format(t,p_index))
+        print(error)
+        print(is_success)
+        print(parent.get_answers(training_set))
         offspring = copy.deepcopy(parent)
         if is_success[p_index] == 1:
-            parent.train( training_set, output_set, learning_rate) ########################
-            error[p_index] = parent.calc_error(test_set, test_out) ##############
-            print(1)
+            error[p_index] = parent.epoch_train(training_set, output_set, learning_rate, epoch)
+            print("success and train")
             continue
         else: # parent failure, train with SA
             error_before = error[p_index]
-      #      offspring.SA_train( training_set, output_set, learning_rate)
+            offspring.SA_train( training_set, output_set)
             error_after = offspring.calc_error(test_set, test_out)
-            if error_before-error_after > error_before * 0.1:
+            if error_before-error_after > error_before * 0.2:
                 # replace the parent
-                population[p_index] = offspring
+                population[p_index] = copy.deepcopy(offspring)
                 error[p_index] = error_after
                 is_success[p_index] = True
-                print(2)
+                print("success and SA train")
                 continue
             else: # delete nodes
                 offspring.delete_nodes(n) # n 不能比MAX_HID_NODE大
-                offspring.train( training_set, output_set, learning_rate)
-                error_after = offspring.calc_error(test_set, test_out)
-                print(3)
+                error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
                 # if better than the worst one, replace it
                 if error_after < error[-1]:
                     error[-1] = error_after
-                    population[-1] = offspring
-                    print(4)
+                    population[-1] = copy.deepcopy(offspring)
+                    print("nodes deletion")
                     continue
                 else: # delete connections
                     #offspring.calc_approx_impt() #######
@@ -409,14 +458,12 @@ def main():
                     ###########
                     #############
                     ###########
-                    offspring.train( training_set, output_set, learning_rate)
-                    error_after = offspring.calc_error(test_set, test_out)
-                    print(5)
+                    error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
                     # if better than the worst one, replace it
                     if error_after < error[-1]:
                         error[-1] = error_after
-                        population[-1] = offspring
-                        print(6)
+                        population[-1] = copy.deepcopy(offspring)
+                        print("connection deletion")
                         continue
                     else: # add connections and nodes
                         offspring2 = copy.deepcopy(offspring)
@@ -427,25 +474,29 @@ def main():
                         #################
                         ###############
                         ###############
-                        offspring.train( training_set, output_set, learning_rate)
-                        offspring2.train( training_set, output_set, learning_rate)
-                        error_after = offspring.calc_error(test_set, test_out)
-                        error_after_2 = offspring2.calc_error(test_set, test_out)
-                        print(7)
+
+                        error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                        error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
                         # replace the worst in one the population
                         if error_after < error_after_2:
-                            population[-1] = offspring
+                            population[-1] = copy.deepcopy(offspring)
                             error[-1] = error_after
-                            print(8)
+                            print("connecton addition")
                         else:
-                            population[-1] = offspring2
+                            population[-1] = copy.deepcopy(offspring2)
                             error[-1] = error_after_2
-                            print(9)
+                            print("nodes addition")
+
 
     output_net = population[0]
-    output_net.train( training_set, output_set, learning_rate)
-
-
+    output_net.epoch_train(training_set, output_set, learning_rate, epoch)
+    E = output_net.calc_error(training_set, output_set)
+    print(E)
+    print(output_net.hidden_nodes)
+    print(output_net.connect_mat)
+    print(output_net.weight_mat)
+    print(output_net.get_answers(training_set))
+    print(output_set)
 
     #net = Network(3,0.7)
     #print(net.weight_mat)
@@ -457,7 +508,7 @@ def main():
 if __name__ == '__main__':
 
     main()
-
+'''
     M = 20
     learning_rate = 0.3  ###########################
     training_set, output_set = training_set_init(5)
@@ -467,3 +518,4 @@ if __name__ == '__main__':
     parent, p_index = choose(population)
     offspring = copy.deepcopy(parent)
     offspring.cell_div(-0.4)
+'''
