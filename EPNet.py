@@ -165,13 +165,11 @@ class Network:
     def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
         weight_history = np.zeros([len(training_set), self.dim, self.dim])
         test = np.zeros([self.dim, self.dim])
-        print(self.weight_mat)
 
         for x, y, i in zip(training_set, output_set, range(len(training_set))):
             gradient_mat = self.back_prop(x, y)
             self.weight_mat -= learning_rate * gradient_mat # update weight
             weight_history[i] = copy.deepcopy(self.weight_mat)
-        print(self.weight_mat)
 
         weight_sum = weight_history.sum(0)
         avg = weight_sum / weight_history.shape[0]
@@ -187,8 +185,19 @@ class Network:
     def calc_approx_impt(self):
         pass
 
-    def add_connection(self):
-        pass
+    def add_connection(self, max_num):
+        filter_mat = np.tril(np.ones([self.dim, self.dim]), k=-1) - self.connect_mat
+        arg_sorted_mat = (filter_mat * self.test).flatten().argsort()
+        for index in arg_sorted_mat[-random.randint(1, max_num):]:
+            x = index // self.dim
+            y = index % self.dim
+            if y > x:
+                tmp = x
+                x = y
+                y = tmp
+            self.connect_mat[x, y] = 1
+            self.weight_mat[x, y] = self.test[x, y]
+
 
     def delete_conn(self, max_num):
         """
@@ -411,7 +420,7 @@ def main():
                         continue
                     else: # add connections and nodes
                         offspring2 = copy.deepcopy(offspring)
-                        offspring.add_connection()#########
+                        offspring.add_connection(3)#########
                         #################
                         #################
                         offspring2.cell_div(-0.4) ##########
