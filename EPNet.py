@@ -19,8 +19,8 @@ class Network:
         N = max_hid_nodes
 
         self.dim = m + N + 1
-        self.connect_mat = np.zeros([self.dim, self.dim]) # 1 or 0, size: (m + N + n)*(m + N + n)
-        self.weight_mat = np.zeros([self.dim, self.dim]) # real number, size: (m + N + n)*(m + N + n)
+        self.connect_mat = np.zeros([self.dim, self.dim]) # 1 or 0, size: (m + N + n)*(m + N + n), lower triagular
+        self.weight_mat = np.zeros([self.dim, self.dim]) # real number, size: (m + N + n)*(m + N + n), lower triagular
         self.hidden_nodes = [] # 1 or 0, size: 1*N
         self.node_num = m + 1
         self.X = np.zeros(self.dim)
@@ -106,6 +106,10 @@ class Network:
                 self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
                 count += 1
                 is_added = True
+
+        # lower-triagularize the two matrices
+        self.connect_mat = np.tril(self.connect_mat, k=-1)
+        self.weight_mat = np.tril(self.weight_mat, k=-1)
         print(self.connect_mat)
 
 
@@ -114,21 +118,11 @@ class Network:
     # return: scalar
     # 可以改成输入多个test case，用矩阵运算
     def feedforward(self, input_set):
-        #X = [i for i in input_set]  # deep copy
         self.X[:len(input_set)] = input_set
-        #net = [0 for i in input_set]
-        #for i in range(m, self.dim):
-        #    tmp = 0
-        #    for j in range(i):
-        #        tmp += self.weight_mat[i][j] * X[i]
-        #    net.append(tmp)
-        #    X.append(sigmoid(tmp))
-        ############################################## 可以在初始化的时候就设置weight matrix为下三角
-        tril_conn = np.tril(self.connect_mat, k=-1)  # lower-triagularize the connection matrix
+
         for i in range(m, self.dim):
-            self.net[i] = np.dot((tril_conn[i]*self.weight_mat[i]), self.X) #######
+            self.net[i] = np.dot((self.connect_mat[i]*self.weight_mat[i]), self.X) #######
             self.X[i] = sigmoid(self.net[i])
-        ################
         return self.X[-1]
 
 
@@ -154,17 +148,16 @@ class Network:
         :param desired_output:
         :return: F_weight(input_set), gradient of Loss function respect to training sample input_set
         """
-        y_hat = self.feedforward(input_set)
+        y_hat = self.feedforward(input_set) # user output
         F_y_hat = np.zeros(self.dim)
-        F_y_hat[-1] = y_hat - desired_output
-        tril_conn = np.tril(self.connect_mat, k=-1)  # lower-triagularize the connection matrix
+        F_y_hat[-1] = y_hat - desired_output  # [0, 0, 0, ... , 0, y_hat]
         # filter only the valid nodes
         s_prime_net = sigmoid_prime(self.net) * ([0 for k in range(m)] + self.hidden_nodes + [1])
         for i in range(self.dim-1, m-1, -1): # from self.dim-1 to m (boundary included)
             #print(sigmoid_prime(self.net))
-            self.F_net = s_prime_net * (F_y_hat + np.dot((tril_conn * self.weight_mat).transpose(), self.F_net))
-        a = np.reshape(self.F_net, [len(self.F_net), 1])
-        b = np.reshape(self.X, [1, len(self.X)])
+            self.F_net = s_prime_net * (F_y_hat + np.dot((self.connect_mat * self.weight_mat).transpose(), self.F_net))
+        a = np.reshape(self.F_net, [len(self.F_net), 1])  # dim * 1 vector
+        b = np.reshape(self.X, [1, len(self.X)])          # 1 * dim vector
         gradient = np.tril(np.dot(a, b), k=-1)
         return gradient
 
@@ -203,7 +196,7 @@ class Network:
         :return:
         """
         # sort from smallest to largest
-        arg_sorted_mat = (np.tril(self.connect_mat, k=-1) * self.test).flatten().argsort()
+        arg_sorted_mat = (self.connect_mat * self.test).flatten().argsort()
         # selection ---------------------------- need modification
         for index in arg_sorted_mat[:random.randint(1, max_num)]:
             x = index // self.dim
@@ -253,6 +246,7 @@ class Network:
                 tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
                 tmp_mat = np.delete(tmp_mat, m_i, 1)
                 self.connect_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
+                self.connect_mat = np.tril(self.connect_mat, k=-1)
 
                 # -----------update weight matrix--------------
                 tmp_mat = self.weight_mat
@@ -260,7 +254,7 @@ class Network:
                 tmp_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 0)
                 tmp_mat = np.delete(tmp_mat, m_i, 1)
                 self.weight_mat = np.insert(tmp_mat, -1, np.zeros(self.dim), 1)
-
+                self.weight_mat = np.tril(self.weight_mat, k=-1)
                 self.node_num -= 1
                 count += 1
         return count
@@ -305,6 +299,9 @@ class Network:
             self.weight_mat[parent_index+1:, new_index] = -alpha * self.weight_mat[parent_index+1:, parent_index]
             self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
 
+            # lower triagularization
+            self.connect_mat = np.tril(self.connect_mat, k=-1)
+            self.weight_mat = np.tril(self.weight_mat, k=-1)
 
 
 def sigmoid(z):
