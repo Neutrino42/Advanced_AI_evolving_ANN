@@ -1,22 +1,28 @@
 import numpy as np
 import random
 import copy
+import sys
 
-random.seed('EPNet')
 
-m = 5  # input nodes number
+m = 5 + 1  # input nodes number + bias node
 
 n = 1  # output nodes number, by default, this variable will not be used.
        # Modifying it changes nothing
 
 MAX_HID_NODES = 5
 density = 0.75
-epoch = 1000
+epoch = 100
 
 
 class Network:
 
-    def __init__(self, max_hid_nodes, edge_dens):
+    def __init__(self, max_hid_nodes, edge_dens, def_nodenum=None, weight_mat=None):
+        """
+
+        :param max_hid_nodes: maximum number of hidden nodes
+        :param edge_dens: density of the edges campared to full connection
+        :param def_nodenum: user-defined hidden nodes number
+        """
 
         N = max_hid_nodes
 
@@ -34,21 +40,29 @@ class Network:
 
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
-        tmp = random.randint(1, N)
+        if def_nodenum:
+            tmp = def_nodenum
+        else:
+            tmp = random.randint(1, N)
+
+        if weight_mat is not None:
+            self.weight_mat = copy.deepcopy(weight_mat) + np.random.standard_normal([self.dim, self.dim])/6
+
         self.node_num += tmp
         self.hidden_nodes = [1 for i in range(tmp)]
         self.hidden_nodes += [0 for i in range(N-tmp)]
-
+        # add connection between bias node to hidden nodes and output node
+        self.connect_mat[-1,0] = self.connect_mat[tmp:tmp+m,0] = 1
         edge_num = (self.node_num*(self.node_num - 1)/2 - (m*(m-1)/2)) * edge_dens
         count = 0
 
         # Add connections for input and output nodes to other nodes.
         # Add to output node first
-        node_idx = random.randint(0, self.dim - 2)
+        node_idx = random.randint(1, self.dim - 2)
         self.connect_mat[self.dim-1][node_idx] = 1
         self.connect_mat[node_idx][self.dim-1] = 1  ######################
-        self.weight_mat[self.dim-1][node_idx] = random.random() / 4  ######################
-        self.weight_mat[node_idx][self.dim-1] = self.weight_mat[self.dim-1][node_idx]
+        #self.weight_mat[self.dim-1][node_idx] = random.random() / 4  ######################
+        #self.weight_mat[node_idx][self.dim-1] = self.weight_mat[self.dim-1][node_idx]
         count += 1
         # Then add to input nodes
         for i in range(m):
@@ -70,8 +84,8 @@ class Network:
                 # Update connection matrix and weight matrix
                 self.connect_mat[i][node_idx] = 1
                 self.connect_mat[node_idx][i] = 1 ######################
-                self.weight_mat[i][node_idx] = random.random()/4 ######################
-                self.weight_mat[node_idx][i] = self.weight_mat[i][node_idx]
+                #self.weight_mat[i][node_idx] = random.random()/4 ######################
+                #self.weight_mat[node_idx][i] = self.weight_mat[i][node_idx]
 
                 count += 1
                 is_added = True
@@ -103,14 +117,14 @@ class Network:
                 # Update connection matrix and weight matrix
                 self.connect_mat[idx_1][idx_2] = 1
                 self.connect_mat[idx_2][idx_1] = 1  ######################
-                self.weight_mat[idx_1][idx_2] = random.random() / 4  ######################
-                self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
+                #self.weight_mat[idx_1][idx_2] = random.random() / 4  ######################
+                #self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
                 count += 1
                 is_added = True
 
         # lower-triagularize the two matrices
         self.connect_mat = np.tril(self.connect_mat, k=-1)
-        self.weight_mat = np.tril(self.weight_mat, k=-1)
+        self.weight_mat = self.weight_mat * self.connect_mat
         #print(self.connect_mat)
 
 
@@ -119,7 +133,9 @@ class Network:
     # return: scalar
     # 可以改成输入多个test case，用矩阵运算
     def feedforward(self, input_set):
-        self.X[:len(input_set)] = input_set
+        # init bias node to 1
+        self.X[0] = 1
+        self.X[1:1+len(input_set)] = input_set
 
         for i in range(m, self.dim):
             self.net[i] = np.dot((self.connect_mat[i]*self.weight_mat[i]), self.X) #######
@@ -173,12 +189,15 @@ class Network:
     def train(self, training_set, output_set, learning_rate):  # learning_rate > 0
         weight_history = np.zeros([len(training_set), self.dim, self.dim])
 
+        l_rate_mat = np.random.random([self.dim, self.dim])*learning_rate/10 + learning_rate - learning_rate/20
+
         for x, y, i in zip(training_set, output_set, range(len(training_set))):
             gradient_mat = self.back_prop(x, y)
-            self.weight_mat -= learning_rate * gradient_mat # update weight
+            self.weight_mat -= l_rate_mat * gradient_mat # update weight
             weight_history[i] = copy.deepcopy(self.weight_mat)
 
         weight_sum = weight_history.sum(0)
+
         avg = weight_sum / weight_history.shape[0]
         sqrt_sum = np.sqrt( np.square(weight_history-avg).sum(0))
         # set the zero terms to 1 to avoid division by zero
@@ -192,35 +211,48 @@ class Network:
 
         for i in range(1, epoch+1):
             self.train(training_set, output_set, eta)
-            # check error every 10 epochs
-            if i % (50) == 0:
+            # check error every epoch//num epochs
+            if i % (10) == 0:
                 error_after = self.calc_error(training_set, output_set)
                 if error_after <= error_before:
-                    eta = eta*1.2
                     error_before = error_after
                     weight_copy = copy.deepcopy(self.weight_mat)
+                    if eta < 0.6:
+                        eta = eta*1.1
+
                 else:
-                    eta = eta*0.8
-                    # restore the previous weight
-                    self.weight_mat = copy.deepcopy(weight_copy)
+                    if eta > 0.1:
+                        eta = eta*0.9
+                        # restore the previous weight
+                        self.weight_mat = copy.deepcopy(weight_copy)
+
         return self.calc_error(training_set, output_set)
 
 
     def SA_train(self, test_set, output_set):
-        T = 3000
-        epo = 200
-        while T > 10:
+        T = 5000
+        epo = 100
+        #best_error = self.calc_error(test_set, output_set)
+        #best_solution = copy.deepcopy(self.weight_mat)
+        while T > 5:
+            sample_i = random.randint(0, len(output_set) - 1)
+            gradient_mat = self.back_prop(test_set[sample_i], output_set[sample_i])
             for i in range(epo):
                 weight_copy = copy.deepcopy(self.weight_mat)
 
                 old_error = self.calc_error(test_set, output_set)
 
-                perturb = np.random.standard_normal([self.dim, self.dim])
+                perturb = (np.random.standard_normal([self.dim, self.dim])+3)/3 *gradient_mat
                 perturb = np.tril(perturb, k=-1)
-                self.weight_mat += perturb
+                self.weight_mat -= perturb * (random.random()*2-1)
 
                 new_error = self.calc_error(test_set, output_set)
                 delta_E = new_error - old_error
+
+                #if new_error < best_error:
+                #    best_error = new_error
+                #    best_solution = copy.deepcopy(self.weight_mat)
+
                 if delta_E < 0:
                     pass
                 else:
@@ -228,28 +260,53 @@ class Network:
                         pass
                     else:
                         self.weight_mat = weight_copy
-            T = 0.9*T
+            T = 0.92*T
+        #elf.weight_mat = copy.deepcopy(best_solution)
         return self.calc_error(test_set, output_set)
 
-    def calc_approx_impt(self):
-        pass
+
 
     def add_connection(self, max_num):
+        full_edge_num = self.dim * (self.dim-1)/2 - m * (m-1)/2 +1
+
+        if self.connect_mat.sum() == full_edge_num:
+            return -1
         filter_mat = np.tril(np.ones([self.dim, self.dim]), k=-1) - self.connect_mat
         filter_mat[:m] = 0
 
-        base_index = np.count_nonzero(filter_mat)
+        #base_index = filter_mat.size - np.count_nonzero(filter_mat)
+        #M = np.count_nonzero(filter_mat)
         # sort from smallest to largest
-        arg_sorted_mat = (filter_mat * self.test).flatten().argsort()
-        for index in arg_sorted_mat[-random.randint(1, max_num):]:
-            x = index // self.dim
-            y = index % self.dim
-            if y > x:
-                tmp = x
-                x = y
-                y = tmp
+        # [0 0 0 0 0 0 ... 0 0 x x x ... x x]
+        #                      |->base index
+        #arg_sorted_mat = (filter_mat * self.test).flatten().argsort()
+
+        # only the available edges is sorted and stored in sorted_mat, from largest to smallest
+        sorted_mat = np.sort(np.abs(self.test[filter_mat==1]))[::-1]
+        count = 0
+        #for index in arg_sorted_mat[: base_index-1 : -1]:
+        for edge in sorted_mat[:random.randint(1, max_num)]:
+
+            if self.connect_mat.sum() == full_edge_num:
+                return count
+
+            if count == max_num:
+                return count
+            #if random.random() < index - base_index / ((1 + M) * M / 2):
+            #if random.random() < index - base_index / ((1 + M) * M / 2):
+            tmp = np.abs(self.test * filter_mat)
+            arg_list = np.argwhere(tmp==edge)
+            x, y = arg_list[0]
+            #if y > x:
+            #    tmp = x
+            #    x = y
+            #    y = tmp
+            #assert np.abs(self.test[x, y])==edge
             self.connect_mat[x, y] = 1
             self.weight_mat[x, y] = self.test[x, y]
+            count += 1
+        return count
+
 
 
     def delete_conn(self, max_num):
@@ -257,25 +314,46 @@ class Network:
         Delete based on self.test, which records the importance of each connection
         :return:
         """
+        min_edges = m + 2
+        if self.connect_mat.sum() <= min_edges:
+            return -1
+
         # sort from smallest to largest
-        arg_sorted_mat = (self.connect_mat * self.test).flatten().argsort()
-        arg_sorted_mat = (self.connect_mat * self.test).flatten().argsort()
+        sorted_mat = np.sort(np.abs(self.test[self.connect_mat==1]))
+        #arg_sorted_mat = (self.connect_mat * self.test).flatten().argsort()
         # selection ---------------------------- need modification
         base_index = np.count_nonzero(self.connect_mat)
-        for index in arg_sorted_mat[base_index: base_index + random.randint(1, max_num)]:
-            x = index // self.dim
-            y = index % self.dim
+        count = 0
+        for edge in sorted_mat[:random.randint(1, max_num)]:
+        #for index in arg_sorted_mat[base_index: base_index + random.randint(1, max_num)]:
+        #M = self.dim - base_index - 1
+        #for index in arg_sorted_mat[base_index: ]:
+            
+            if self.connect_mat.sum() <= min_edges:
+                return count
+
+            if count == max_num:
+                return count
+            #if random.random() < M-(index-base_index)/((1+M)*M/2):
+            tmp = np.abs(self.test * self.connect_mat)
+            arg_list = np.argwhere(tmp == edge)
+            x, y = arg_list[0]
+            #x = index // self.dim
+            #y = index % self.dim
             # avoid deleting all connections of a input or output node
-            # if only one connection left for input node, skip
+            # if there is only one connection left for input node, skip
             if y < m and np.count_nonzero(self.connect_mat[:,y]) ==1:
                 continue
-            # if only one connection left for output node, skip
+            # if there is only one connection left for output node, skip
             if x == self.dim-1 and np.count_nonzero(self.connect_mat[x,:] == 1):
                 continue
             self.connect_mat[x,y] = 0
-            self.connect_mat[y,x] = 0
+            #self.connect_mat[y,x] = 0
             self.weight_mat[x,y] = 0
-            self.weight_mat[y,x] = 0
+            #self.weight_mat[y,x] = 0
+            count += 1
+        return count
+
 
 
 
@@ -287,9 +365,12 @@ class Network:
         """
         count = 0
         hid_n_size = self.node_num - m - 1 # number of hidden nodes
-        if hid_n_size == 1:
+        if hid_n_size <= 1:
             return -1
         for i in range(hid_n_size):
+            if self.node_num - m - 1 == 1:
+                return count
+
             if count == num:
                 break
                 # s 个里面取 num 个，每一个的概率是 p = 1-C(s-1,num)/C(s,num) = num/s,
@@ -335,50 +416,53 @@ class Network:
 
     def cell_div(self, alpha):
         # add node only when there is vacant position
-        if self.hidden_nodes.count(1) > 0:
-            # randomly choose a node to duplicate
-            while True:
-                parent_index = m + random.randint(0,len(self.hidden_nodes)-1)
-                if self.hidden_nodes[parent_index-m] == 1:
-                    break
+        if self.hidden_nodes.count(0) == 0:
+            return -1
+        # randomly choose a node to duplicate
+        while True:
+            parent_index = m + random.randint(0,len(self.hidden_nodes)-1)
+            if self.hidden_nodes[parent_index-m] == 1:
+                break
 
-            # insert the new node next to its parent
-            new_index = parent_index + 1
+        # insert the new node next to its parent
+        new_index = parent_index + 1
 
-            self.hidden_nodes = [1] + self.hidden_nodes[:-1]
-            self.node_num += 1
+        self.hidden_nodes = [1] + self.hidden_nodes[:-1]
+        self.node_num += 1
 
-            # Update connection and weight matrices
-            tmp_mat = self.connect_mat
-            tmp_mat = np.delete(tmp_mat, -2, 0)
-            tmp_mat = np.insert(tmp_mat, new_index, self.connect_mat[parent_index, :], 0)
-            tmp_mat = np.delete(tmp_mat, -2, 1)
-            self.connect_mat = np.insert(tmp_mat, new_index, self.connect_mat[:, parent_index], 1)
+        # Update connection and weight matrices
+        tmp_mat = self.connect_mat
+        tmp_mat = np.delete(tmp_mat, -2, 0)
+        tmp_mat = np.insert(tmp_mat, new_index, self.connect_mat[parent_index, :], 0)
+        tmp_mat = np.delete(tmp_mat, -2, 1)
+        self.connect_mat = np.insert(tmp_mat, new_index, self.connect_mat[:, parent_index], 1)
 
-            #self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
-            #self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
-            self.connect_mat[new_index, new_index] = 0
+        #self.connect_mat[new_index, :] = self.connect_mat[parent_index, :]
+        #self.connect_mat[:, new_index] = self.connect_mat[:, parent_index]
+        self.connect_mat[new_index, new_index] = 0
 
-            # 从前面连过来的weight不变，往后连的weight都要变
-            tmp_mat = self.weight_mat
-            tmp_mat = np.delete(tmp_mat, -2, 0)
-            tmp_mat = np.insert(tmp_mat, new_index, self.weight_mat[parent_index, :], 0)
-            tmp_mat = np.delete(tmp_mat, -2, 1)
-            self.weight_mat = np.insert(tmp_mat, new_index, self.weight_mat[:, parent_index], 1)
+        # 从前面连过来的weight不变，往后连的weight都要变
+        tmp_mat = self.weight_mat
+        tmp_mat = np.delete(tmp_mat, -2, 0)
+        tmp_mat = np.insert(tmp_mat, new_index, self.weight_mat[parent_index, :], 0)
+        tmp_mat = np.delete(tmp_mat, -2, 1)
+        self.weight_mat = np.insert(tmp_mat, new_index, self.weight_mat[:, parent_index], 1)
 
-            # edges from the beginning
-            self.weight_mat[new_index, :parent_index+1] = -alpha * self.weight_mat[parent_index, :parent_index+1]
-            # edges connecting forward
-            self.weight_mat[parent_index+1:, new_index] = -alpha * self.weight_mat[parent_index+1:, parent_index]
-            self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
+        # edges from the beginning
+        self.weight_mat[new_index, :parent_index+1] = -alpha * self.weight_mat[parent_index, :parent_index+1]
+        # edges connecting forward
+        self.weight_mat[parent_index+1:, new_index] = -alpha * self.weight_mat[parent_index+1:, parent_index]
+        self.weight_mat[parent_index+1:, parent_index] = (1+alpha) * self.weight_mat[parent_index+1:, parent_index]
 
-            # lower triagularization
-            self.connect_mat = np.tril(self.connect_mat, k=-1)
-            self.weight_mat = np.tril(self.weight_mat, k=-1)
+        # lower triagularization
+        self.connect_mat = np.tril(self.connect_mat, k=-1)
+        self.weight_mat = np.tril(self.weight_mat, k=-1)
+
+        return 0
 
 
 def sigmoid(z):
-        return 1.0/(1.0+np.exp(-z))
+    return 1.0/(1.0+np.exp(-z))
 
 
 def sigmoid_prime(z):
@@ -386,11 +470,25 @@ def sigmoid_prime(z):
     return sigmoid(z)*(1-sigmoid(z))
 
 
-def population_init(M, test_set, desired_out):
-    population = [Network(MAX_HID_NODES, density) for i in range(M)]
-    is_success = [False for i in range(M)]
-    init_error = [net.calc_error(test_set, desired_out) for net in population]
-    return population, is_success, init_error
+def population_init(M, training_set, desired_out, weight_mat=None):
+    population = []
+    # if number of individuals M larger than MAX_HID_NODES,
+    # initialize MAX_HID_NODES number of networks with exactly 1,2,3,...,MAX_HID_NODES node(s)
+    if M > MAX_HID_NODES:
+        population = [Network(MAX_HID_NODES, density, i+1, weight_mat=weight_mat) for i in range(MAX_HID_NODES)]
+        population += [Network(MAX_HID_NODES, density, weight_mat=weight_mat) for i in range(MAX_HID_NODES,M)]
+    else:
+        population = [Network(MAX_HID_NODES, density, weight_mat=weight_mat) for i in range(M)]
+
+    #is_success = [False for i in range(M)]
+    init_error = [net.calc_error(training_set, desired_out) for net in population]
+    after_error = [p.epoch_train(training_set, desired_out,0.5, epoch*5) for p in population]
+    percent = (np.array(init_error) - np.array(after_error))/np.array(init_error)
+    is_success = list(np.where(percent>0.4, True, False))
+    print(init_error)
+    print(after_error)
+
+    return population, is_success, after_error
 
 
 def error_sort(population, is_success, error):
@@ -403,13 +501,17 @@ def error_sort(population, is_success, error):
 def choose(sorted_popu):
     M = len(sorted_popu)
     # initialize return values
+    # the zeroth is the fittest
     p_idx = 0
     parent_c = sorted_popu[p_idx]
-    for i in range(M):
+    rdm = random.random() * ((1+M)*M/2)
+    l = list(range(M, 0, -1))
+    for i in range(M, 0, -1):
         # probability for choosing (M-j)th individual:
         # P(M-j) = j/sum(1 to M)
-        if random.random() < (M-i)/((1+M)*M/2):
-            p_idx = i
+        rdm -= i
+        if rdm < 0:
+            p_idx = M-i
             parent_c = sorted_popu[p_idx]
             break
     return parent_c, p_idx
@@ -428,36 +530,47 @@ def training_set_init(dim):
     y = (x.sum(1) + 1)%2
     return x, y
 
-def main():
-    M = 20
-    learning_rate = 0.3 ###########################
+def main(weight_mat=None):
+    M = 10
+    learning_rate = 0.5 ###########################
     training_set, output_set= training_set_init(5)
     test_set = training_set ################
     test_out = output_set ##################
-    population, is_success, error = population_init(M, test_set, test_out)
-    for t in range(100):
+    population, is_success, error = population_init(M, test_set, test_out, weight_mat)
+
+    for t in range(200):
         #选parent
        # random.shuffle()
+        #c = list(zip(training_set, output_set))
+        #random.shuffle(c)
+        #training_set[:], output_set[:] = zip(*c)
         population, is_success, error = error_sort(population, is_success, error)
         parent, p_index = choose(population)
         print("epoch: {}. parent @ {}".format(t,p_index))
         print(error)
         print(is_success)
         print(parent.get_answers(training_set))
-        offspring = copy.deepcopy(parent)
-        offspring.delete_conn(3)
-        #error[p_index] = offspring.SA_train(training_set, output_set)
-        error[p_index] = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+        print(parent.hidden_nodes)
 
-        if is_success[p_index] == 1:
-            error[p_index] = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+
+        offspring = copy.deepcopy(parent)
+        #offspring.delete_conn(3)
+        #error[p_index] = offspring.SA_train(training_set, output_set)
+        error_before = error[p_index]
+        offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+
+        if is_success[p_index]:
+            error[p_index] = offspring.epoch_train(training_set, output_set, learning_rate, epoch*5)
+            print("error before-after: {}. error_after: {}".format(error_before - error[p_index], error[p_index]))
+            if error_before - error[p_index]< 0.001 * error_before:
+                is_success[p_index] = False
+                print("set to False")
             print("success and train")
             continue
         else: # parent failure, train with SA
-            error_before = error[p_index]
-            offspring.SA_train(training_set, output_set)
-            error_after = offspring.calc_error(test_set, test_out)
-            if error_before-error_after > error_before * 0.3:
+            error_after = offspring.SA_train(training_set, output_set)
+            print("SA train. error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+            if error_before-error_after > 0:#error_before * 0.001:
                 # replace the parent
                 population[p_index] = copy.deepcopy(offspring)
                 error[p_index] = error_after
@@ -465,11 +578,13 @@ def main():
                 print("success and SA train")
                 continue
             else: # delete nodes
-                offspring = copy.deepcopy(parent)
-                is_deleted = offspring.delete_nodes(2) # n 不能比MAX_HID_NODE大
+                #offspring = copy.deepcopy(parent)
+                can_be_deleted = offspring.delete_nodes(2) # n 不能比MAX_HID_NODE大
                 error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+
                 # if better than the worst one, replace it
-                if error_after < error[-1] and is_deleted==-1:
+                if error_before - error_after > 0 and can_be_deleted!=-1: #0.001*error_before and can_be_deleted!=-1:
                     error[-1] = error_after
                     population[-1] = copy.deepcopy(offspring)
                     print("nodes deletion")
@@ -477,13 +592,15 @@ def main():
                 else: # delete connections
                     #offspring.calc_approx_impt() #######
                     offspring = copy.deepcopy(parent)
-                    offspring.delete_conn(3)
+                    can_be_deleted = offspring.delete_conn(3)
                     ###########
                     #############
                     ###########
                     error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                    print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+
                     # if better than the worst one, replace it
-                    if error_after < error[-1]:
+                    if error_before - error_after > 0 and can_be_deleted!=-1:
                         error[-1] = error_after
                         population[-1] = copy.deepcopy(offspring)
                         print("connection deletion")
@@ -491,29 +608,53 @@ def main():
                     else: # add connections and nodes
                         offspring = copy.deepcopy(parent)
                         offspring2 = copy.deepcopy(offspring)
-                        offspring.add_connection(3)#########
+                        success = offspring.add_connection(3)#########
                         #################
                         #################
-                        offspring2.cell_div(-0.4) ##########
+                        success2 = offspring2.cell_div(-0.4) ##########
                         #################
                         ###############
                         ###############
 
-                        error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-                        error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
-                        # replace the worst in one the population
-                        if error_after < error_after_2:
-                            population[-1] = copy.deepcopy(offspring)
-                            error[-1] = error_after
-                            print("connecton addition")
-                        else:
+
+                        if success != -1 and success2 != -1:
+                            error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                            error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
+
+                            # replace the worst in one the population
+                            if error_after < error_after_2:
+                                population[-1] = copy.deepcopy(offspring)
+                                error_after = error[-1] = error_after
+                                print("connecton addition")
+                            else:
+                                population[-1] = copy.deepcopy(offspring2)
+                                error_after = error[-1] = error_after_2
+                                print("nodes addition")
+
+                        elif success == -1 and success2 != -1:
+                            error_after = error[-1] = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
                             population[-1] = copy.deepcopy(offspring2)
-                            error[-1] = error_after_2
                             print("nodes addition")
+
+                        elif success !=-1 and success2 == -1:
+                            error_after = error[-1] = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                            population[-1] = copy.deepcopy(offspring)
+
+                        else:
+                            error_after = offspring.SA_train(training_set, output_set)
+                            #print("error before-after: {}. error_before: {}".format(error_before - error_after, error_before))
+                            # replace the parent
+                            population[p_index] = copy.deepcopy(offspring)
+                            error[p_index] = error_after
+                            print("success and SA train")
+                            if error_before - error_after > error_before * 0.001:
+                                is_success[p_index] = True
+
+                        print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
 
     output_net = population[0]
-    output_net.epoch_train(training_set, output_set, learning_rate, epoch)
+    output_net.epoch_train(training_set, output_set, learning_rate, epoch*10)
     E = output_net.calc_error(training_set, output_set)
     print(E)
     print(output_net.hidden_nodes)
@@ -531,15 +672,30 @@ def main():
 
 if __name__ == '__main__':
 
+    x, y = training_set_init(5)
+
+    full_net = Network(MAX_HID_NODES, 0.9 ,MAX_HID_NODES-1)
+    full_net.epoch_train(x, y, 0.5, epoch)
+    print(full_net.hidden_nodes)
+    print(full_net.connect_mat)
+    print(full_net.weight_mat)
+    print(full_net.cell_div(-0.4))
+    print(full_net.hidden_nodes)
+    print(full_net.connect_mat)
+    print(full_net.weight_mat)
     main()
 '''
-    M = 20
-    learning_rate = 0.3  ###########################
-    training_set, output_set = training_set_init(5)
-    test_set = training_set  ################
-    test_out = output_set  ##################
-    population, is_success, error = population_init(M, test_set, test_out)
-    parent, p_index = choose(population)
-    offspring = copy.deepcopy(parent)
-    offspring.cell_div(-0.4)
+    random.seed('EPNet')
+
+    if(len(sys.argv) >=3 ):
+        if sys.argv[1] == '-s':
+            random.seed(sys.argv[2])
+            print(sys.argv)
+
+    x, y = training_set_init(5)
+    full_net = Network(MAX_HID_NODES, 0.99 ,MAX_HID_NODES)
+    full_net.epoch_train(x, y, 0.5, epoch*100)
+    print(full_net.get_answers(x))
+    print(full_net.calc_error(x,y))
+    main(full_net.weight_mat)
 '''
