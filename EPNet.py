@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import random
 import copy
@@ -10,7 +12,7 @@ n = 1  # output nodes number, by default, this variable will not be used.
        # Modifying it changes nothing
 
 MAX_HID_NODES = 5
-density = 0.75
+density = 0.98
 epoch = 100
 
 
@@ -230,21 +232,21 @@ class Network:
 
 
     def SA_train(self, test_set, output_set):
-        T = 5000
+        T = 3000
         epo = 100
         #best_error = self.calc_error(test_set, output_set)
         #best_solution = copy.deepcopy(self.weight_mat)
         while T > 5:
             sample_i = random.randint(0, len(output_set) - 1)
-            gradient_mat = self.back_prop(test_set[sample_i], output_set[sample_i])
+            #gradient_mat = self.back_prop(test_set[sample_i], output_set[sample_i])
             for i in range(epo):
                 weight_copy = copy.deepcopy(self.weight_mat)
 
                 old_error = self.calc_error(test_set, output_set)
 
-                perturb = (np.random.standard_normal([self.dim, self.dim])+3)/3 *gradient_mat
+                perturb = np.random.standard_normal([self.dim, self.dim])/3
                 perturb = np.tril(perturb, k=-1)
-                self.weight_mat -= perturb * (random.random()*2-1)
+                self.weight_mat += perturb
 
                 new_error = self.calc_error(test_set, output_set)
                 delta_E = new_error - old_error
@@ -297,10 +299,10 @@ class Network:
             tmp = np.abs(self.test * filter_mat)
             arg_list = np.argwhere(tmp==edge)
             x, y = arg_list[0]
-            #if y > x:
-            #    tmp = x
-            #    x = y
-            #    y = tmp
+            if y > x:
+                tmp = x
+                x = y
+                y = tmp
             #assert np.abs(self.test[x, y])==edge
             self.connect_mat[x, y] = 1
             self.weight_mat[x, y] = self.test[x, y]
@@ -462,7 +464,11 @@ class Network:
 
 
 def sigmoid(z):
-    return 1.0/(1.0+np.exp(-z))
+    # avoid runtime overflow
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        z = np.array(z, dtype=np.float128)
+        return 1.0 / (1.0 + np.exp(-z))
 
 
 def sigmoid_prime(z):
@@ -474,11 +480,11 @@ def population_init(M, training_set, desired_out, weight_mat=None):
     population = []
     # if number of individuals M larger than MAX_HID_NODES,
     # initialize MAX_HID_NODES number of networks with exactly 1,2,3,...,MAX_HID_NODES node(s)
-    if M > MAX_HID_NODES:
-        population = [Network(MAX_HID_NODES, density, i+1, weight_mat=weight_mat) for i in range(MAX_HID_NODES)]
-        population += [Network(MAX_HID_NODES, density, weight_mat=weight_mat) for i in range(MAX_HID_NODES,M)]
-    else:
-        population = [Network(MAX_HID_NODES, density, weight_mat=weight_mat) for i in range(M)]
+    #if M > MAX_HID_NODES:
+    #    population = [Network(MAX_HID_NODES, density, i+1, weight_mat=weight_mat) for i in range(MAX_HID_NODES)]
+    #    population += [Network(MAX_HID_NODES, density, 1, weight_mat=weight_mat) for i in range(MAX_HID_NODES,M)]
+    #else:
+    population = [Network(MAX_HID_NODES, density, MAX_HID_NODES, weight_mat=weight_mat) for i in range(M)]
 
     #is_success = [False for i in range(M)]
     init_error = [net.calc_error(training_set, desired_out) for net in population]
@@ -531,12 +537,13 @@ def training_set_init(dim):
     return x, y
 
 def main(weight_mat=None):
-    M = 10
+    M = 20
     learning_rate = 0.5 ###########################
     training_set, output_set= training_set_init(5)
     test_set = training_set ################
     test_out = output_set ##################
     population, is_success, error = population_init(M, test_set, test_out, weight_mat)
+
 
     for t in range(200):
         #选parent
@@ -562,95 +569,105 @@ def main(weight_mat=None):
         if is_success[p_index]:
             error[p_index] = offspring.epoch_train(training_set, output_set, learning_rate, epoch*5)
             print("error before-after: {}. error_after: {}".format(error_before - error[p_index], error[p_index]))
-            if error_before - error[p_index]< 0.001 * error_before:
+            if  error_before - error[p_index]< 0.0001 * error_before:
                 is_success[p_index] = False
                 print("set to False")
-            print("success and train")
-            continue
-        else: # parent failure, train with SA
-            error_after = offspring.SA_train(training_set, output_set)
-            print("SA train. error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
-            if error_before-error_after > 0:#error_before * 0.001:
-                # replace the parent
-                population[p_index] = copy.deepcopy(offspring)
-                error[p_index] = error_after
-                is_success[p_index] = True
-                print("success and SA train")
+                print("success and train")
                 continue
-            else: # delete nodes
-                #offspring = copy.deepcopy(parent)
-                can_be_deleted = offspring.delete_nodes(2) # n 不能比MAX_HID_NODE大
+#        else: # parent failure, train with SA
+#            error_after = offspring.SA_train(training_set, output_set)
+#            print("SA train. error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+#            if error_before-error_after > 0:#error_before * 0.001:
+#                # replace the parent
+#                population[p_index] = copy.deepcopy(offspring)
+#                error[p_index] = error_after
+#                is_success[p_index] = True
+#                print("success and SA train")
+#                continue
+        else: # delete nodes
+            offspring = copy.deepcopy(parent)
+            can_be_deleted = offspring.delete_nodes(2) # n 不能比MAX_HID_NODE大
+            error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+            print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+
+            # if better than the worst one, replace it
+            if error_before - error_after > -0.08  and can_be_deleted!=-1: #0.001*error_before and can_be_deleted!=-1:
+                error[-1] = error_after
+                population[-1] = copy.deepcopy(offspring)
+                print("nodes deletion")
+                continue
+            else: # delete connections
+                #offspring.calc_approx_impt() #######
+                offspring = copy.deepcopy(parent)
+                can_be_deleted = offspring.delete_conn(3)
+                ###########
+                #############
+                ###########
                 error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
                 print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
                 # if better than the worst one, replace it
-                if error_before - error_after > 0 and can_be_deleted!=-1: #0.001*error_before and can_be_deleted!=-1:
+                if error_before - error_after > 0 and can_be_deleted!=-1:
                     error[-1] = error_after
                     population[-1] = copy.deepcopy(offspring)
-                    print("nodes deletion")
+                    print("connection deletion")
                     continue
-                else: # delete connections
-                    #offspring.calc_approx_impt() #######
+                else: # add connections and nodes
                     offspring = copy.deepcopy(parent)
-                    can_be_deleted = offspring.delete_conn(3)
-                    ###########
-                    #############
-                    ###########
-                    error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-                    print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+                    offspring2 = copy.deepcopy(offspring)
+                    success = offspring.add_connection(3)#########
 
-                    # if better than the worst one, replace it
-                    if error_before - error_after > 0 and can_be_deleted!=-1:
-                        error[-1] = error_after
-                        population[-1] = copy.deepcopy(offspring)
-                        print("connection deletion")
-                        continue
-                    else: # add connections and nodes
-                        offspring = copy.deepcopy(parent)
-                        offspring2 = copy.deepcopy(offspring)
-                        success = offspring.add_connection(3)#########
-                        #################
-                        #################
-                        success2 = offspring2.cell_div(-0.4) ##########
-                        #################
-                        ###############
-                        ###############
+                    success2 = offspring2.cell_div(-0.4) ##########
 
-
-                        if success != -1 and success2 != -1:
-                            error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-                            error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
-
-                            # replace the worst in one the population
-                            if error_after < error_after_2:
+                    if success >0 and success2 >0 :
+                        error_after_1 = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                        error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
+                        print("both success. conn add error {}".format(error_after_1))
+                        # replace the worst in one the population
+                        if error_after_1 < error_after_2:
+                            if error_before - error_after_1 > -5:
                                 population[-1] = copy.deepcopy(offspring)
-                                error_after = error[-1] = error_after
+                                error[-1] = error_after_1
                                 print("connecton addition")
-                            else:
-                                population[-1] = copy.deepcopy(offspring2)
-                                error_after = error[-1] = error_after_2
-                                print("nodes addition")
-
-                        elif success == -1 and success2 != -1:
-                            error_after = error[-1] = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
-                            population[-1] = copy.deepcopy(offspring2)
-                            print("nodes addition")
-
-                        elif success !=-1 and success2 == -1:
-                            error_after = error[-1] = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-                            population[-1] = copy.deepcopy(offspring)
-
+                                continue
                         else:
-                            error_after = offspring.SA_train(training_set, output_set)
-                            #print("error before-after: {}. error_before: {}".format(error_before - error_after, error_before))
-                            # replace the parent
-                            population[p_index] = copy.deepcopy(offspring)
-                            error[p_index] = error_after
-                            print("success and SA train")
-                            if error_before - error_after > error_before * 0.001:
-                                is_success[p_index] = True
+                            if error_before - error_after_2 > -5:
+                                population[-1] = copy.deepcopy(offspring2)
+                                error[-1] = error_after_2
+                                print("nodes addition")
+                                continue
 
-                        print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+                    if success <=0 and success2 >0:
+                        error_after = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
+                        if error_before - error_after > -5:
+                            population[-1] = copy.deepcopy(offspring2)
+                            error[-1] = error_after
+                            print("nodes addition")
+                            continue
+
+                    if success >0 and success2 <=0:
+                        error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
+                        if error_before - error_after > -5:
+                            population[-1] = copy.deepcopy(offspring)
+                            error[-1] = error_after
+                            print("only conn add success, error {}".format(error_after))
+                            print("connection addition")
+                            continue
+
+
+                    error_after = offspring.SA_train(training_set, output_set)
+                    #print("error before-after: {}. error_before: {}".format(error_before - error_after, error_before))
+                    # replace the parent
+                    population[p_index] = copy.deepcopy(offspring)
+                    error[p_index] = error_after
+                    print("success and SA train")
+                    if error_before - error_after > error_before * 0.001:
+                        is_success[p_index] = True
+                    else:
+                        new_offspring = Network(MAX_HID_NODES, density, MAX_HID_NODES, population[0].weight_mat)
+                        error_after = error[-1] = new_offspring.epoch_train(training_set, output_set,0.5, epoch*5)
+
+                    print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
 
     output_net = population[0]
@@ -672,30 +689,29 @@ def main(weight_mat=None):
 
 if __name__ == '__main__':
 
-    x, y = training_set_init(5)
-
-    full_net = Network(MAX_HID_NODES, 0.9 ,MAX_HID_NODES-1)
-    full_net.epoch_train(x, y, 0.5, epoch)
-    print(full_net.hidden_nodes)
-    print(full_net.connect_mat)
-    print(full_net.weight_mat)
-    print(full_net.cell_div(-0.4))
-    print(full_net.hidden_nodes)
-    print(full_net.connect_mat)
-    print(full_net.weight_mat)
-    main()
-'''
     random.seed('EPNet')
+    np.random.seed(random.randint(0,10))
 
     if(len(sys.argv) >=3 ):
         if sys.argv[1] == '-s':
             random.seed(sys.argv[2])
+            np.random.seed(random.randint(0,10))
             print(sys.argv)
+    main()
 
+
+
+'''
     x, y = training_set_init(5)
+    one_net = Network(MAX_HID_NODES, 0.99, 1)
+    one_net.epoch_train(x, y, 0.5, epoch*10)
+    print(one_net.get_answers(x))
+    print(one_net.calc_error(x, y))
+
     full_net = Network(MAX_HID_NODES, 0.99 ,MAX_HID_NODES)
-    full_net.epoch_train(x, y, 0.5, epoch*100)
+    full_net.epoch_train(x, y, 0.5, epoch*10)
     print(full_net.get_answers(x))
     print(full_net.calc_error(x,y))
-    main(full_net.weight_mat)
-'''
+    '''
+
+
