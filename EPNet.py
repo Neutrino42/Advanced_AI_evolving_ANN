@@ -5,6 +5,7 @@ import random
 import copy
 import sys
 
+import time
 
 m = 5 + 1  # input nodes number + bias node
 
@@ -18,7 +19,7 @@ epoch = 100
 
 class Network:
 
-    def __init__(self, max_hid_nodes, edge_dens, def_nodenum=None, weight_mat=None):
+    def __init__(self, max_hid_nodes, edge_dens=1, def_nodenum=None, weight_mat=None):
         """
 
         :param max_hid_nodes: maximum number of hidden nodes
@@ -39,7 +40,8 @@ class Network:
         self.F_net = np.zeros(self.dim)
         self.F_weight = np.zeros([self.dim, self.dim])
         self.test = np.zeros([self.dim, self.dim])  # the importance for each connection
-
+        self.max_conn = 0
+        self.min_conn = 0
         # randomly generate hidden nodes
         # the valid hidden nodes will always be at the beginning of the list
         if def_nodenum:
@@ -53,81 +55,102 @@ class Network:
         self.node_num += tmp
         self.hidden_nodes = [1 for i in range(tmp)]
         self.hidden_nodes += [0 for i in range(N-tmp)]
-        # add connection between bias node to hidden nodes and output node
-        self.connect_mat[-1,0] = self.connect_mat[tmp:tmp+m,0] = 1
-        edge_num = (self.node_num*(self.node_num - 1)/2 - (m*(m-1)/2)) * edge_dens
-        count = 0
 
-        # Add connections for input and output nodes to other nodes.
-        # Add to output node first
-        node_idx = random.randint(1, self.dim - 2)
-        self.connect_mat[self.dim-1][node_idx] = 1
-        self.connect_mat[node_idx][self.dim-1] = 1  ######################
-        #self.weight_mat[self.dim-1][node_idx] = random.random() / 4  ######################
-        #self.weight_mat[node_idx][self.dim-1] = self.weight_mat[self.dim-1][node_idx]
-        count += 1
-        # Then add to input nodes
-        for i in range(m):
+        # BY DEFAULT, FULL CONNECTION IS CONSIDERED
+        if edge_dens==1:
+            self.connect_mat = np.ones([self.dim, self.dim])
+            self.connect_mat[:m,:] = 0
+#            print(tmp)
+            self.connect_mat[m+tmp:-1,:] = self.connect_mat[:,m+tmp:-1] =0
+            # lower-triagularize the two matrices
+            self.connect_mat = np.tril(self.connect_mat, k=-1)
+            self.weight_mat = self.weight_mat * self.connect_mat
 
-            is_added = False
+            self.max_conn = self.connect_mat.sum()
+            self.min_conn = m-1 + self.hidden_nodes.count(1)
+#            print(self.max_conn)
 
-            while not is_added:
-                # randomly pick a node
-                node_idx = random.randint(m, self.dim-1)
-                # Check its existence, especially when it may be a hidden node
-                if node_idx != self.dim-1:
-                    if self.hidden_nodes[node_idx - m] == 0:
+        else:
+            count = 0
+            # add connection between bias node to hidden nodes and output node
+            self.connect_mat[-1,0] = self.connect_mat[m:tmp+m,0] = 1
+            edge_num = (self.node_num*(self.node_num - 1)/2 - (m*(m-1)/2)) * edge_dens
+#            print(self.node_num*(self.node_num - 1)/2 - (m*(m-1)/2))
+#            print((m + m + self.hidden_nodes.count(1) - 1) * self.hidden_nodes.count(1) / 2 + m + self.hidden_nodes.count(1))
+            # Add connections for input and output nodes to other nodes.
+            # Add connections to output node first
+            node_idx = random.randint(1, self.dim - 2)
+            self.connect_mat[self.dim-1][node_idx] = 1
+            self.connect_mat[node_idx][self.dim-1] = 1  ######################
+            #self.weight_mat[self.dim-1][node_idx] = random.random() / 4  ######################
+            #self.weight_mat[node_idx][self.dim-1] = self.weight_mat[self.dim-1][node_idx]
+            count += 1
+            # Then add connections to input nodes
+            for i in range(m):
+
+                is_added = False
+
+                while not is_added:
+                    # randomly pick a node
+                    node_idx = random.randint(m, self.dim-1)
+                    # Check its existence, especially when it may be a hidden node
+                    if node_idx != self.dim-1:
+                        if self.hidden_nodes[node_idx - m] == 0:
+                            continue
+
+                    # Check if the connection already exists
+                    if self.connect_mat[i][node_idx] == 1:
                         continue
 
-                # Check if the connection already exists
-                if self.connect_mat[i][node_idx] == 1:
-                    continue
+                    # Update connection matrix and weight matrix
+                    self.connect_mat[i][node_idx] = 1
+                    self.connect_mat[node_idx][i] = 1 ######################
+                    #self.weight_mat[i][node_idx] = random.random()/4 ######################
+                    #self.weight_mat[node_idx][i] = self.weight_mat[i][node_idx]
 
-                # Update connection matrix and weight matrix
-                self.connect_mat[i][node_idx] = 1
-                self.connect_mat[node_idx][i] = 1 ######################
-                #self.weight_mat[i][node_idx] = random.random()/4 ######################
-                #self.weight_mat[node_idx][i] = self.weight_mat[i][node_idx]
+                    count += 1
+                    is_added = True
+            #print(self.connect_mat)
 
-                count += 1
-                is_added = True
-        #print(self.connect_mat)
+            # 接着加新的edges
+            while count < edge_num:
+                is_added = False
 
-        # 接着加新的edges
-        while count < edge_num:
-            is_added = False
-
-            while not is_added:
-                sample_list = [i for i in range(self.node_num -1)] + [self.dim-1]
-                idx_1, idx_2 = random.sample(sample_list, 2)
-                # Check their existence, especially when they may be a hidden node
-                if idx_1 == idx_2:
-                    continue
-                if idx_1 < m and idx_2 < m:
-                    continue
-                if m <= idx_1 < self.dim - 1:
-                    if self.hidden_nodes[idx_1 - m] == 0:
+                while not is_added:
+                    sample_list = [i for i in range(self.node_num -1)] + [self.dim-1]
+                    idx_1, idx_2 = random.sample(sample_list, 2)
+                    # Check their existence, especially when they may be a hidden node
+                    if idx_1 == idx_2:
                         continue
-                if m <= idx_2 < self.dim - 1:
-                    if self.hidden_nodes[idx_2 - m] == 0:
+                    if idx_1 < m and idx_2 < m:
+                        continue
+                    if m <= idx_1 < self.dim - 1:
+                        if self.hidden_nodes[idx_1 - m] == 0:
+                            continue
+                    if m <= idx_2 < self.dim - 1:
+                        if self.hidden_nodes[idx_2 - m] == 0:
+                            continue
+
+                    # Check if the connection already exists
+                    if self.connect_mat[idx_1][idx_2] == 1:
                         continue
 
-                # Check if the connection already exists
-                if self.connect_mat[idx_1][idx_2] == 1:
-                    continue
+                    # Update connection matrix and weight matrix
+                    self.connect_mat[idx_1][idx_2] = 1
+                    self.connect_mat[idx_2][idx_1] = 1  ######################
+                    #self.weight_mat[idx_1][idx_2] = random.random() / 4  ######################
+                    #self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
+                    count += 1
+                    is_added = True
 
-                # Update connection matrix and weight matrix
-                self.connect_mat[idx_1][idx_2] = 1
-                self.connect_mat[idx_2][idx_1] = 1  ######################
-                #self.weight_mat[idx_1][idx_2] = random.random() / 4  ######################
-                #self.weight_mat[idx_2][idx_1] = self.weight_mat[idx_1][idx_2]
-                count += 1
-                is_added = True
+            # lower-triagularize the two matrices
+            self.connect_mat = np.tril(self.connect_mat, k=-1)
+            self.weight_mat = self.weight_mat * self.connect_mat
+            self.min_conn = m - 1 + self.hidden_nodes.count(1)
+            self.max_conn = (m + m + self.hidden_nodes.count(1) - 1) * self.hidden_nodes.count(
+                1) / 2 + m + self.hidden_nodes.count(1)
 
-        # lower-triagularize the two matrices
-        self.connect_mat = np.tril(self.connect_mat, k=-1)
-        self.weight_mat = self.weight_mat * self.connect_mat
-        #print(self.connect_mat)
+#            print(self.connect_mat)
 
 
 
@@ -269,13 +292,14 @@ class Network:
 
 
     def add_connection(self, max_num):
-        full_edge_num = self.dim * (self.dim-1)/2 - m * (m-1)/2 +1
 
-        if self.connect_mat.sum() == full_edge_num:
+        if self.connect_mat.sum() == self.max_conn:
             return -1
         filter_mat = np.tril(np.ones([self.dim, self.dim]), k=-1) - self.connect_mat
         filter_mat[:m] = 0
+        filter_mat[m + self.hidden_nodes.count(1):-1, :] = filter_mat[:, m + self.hidden_nodes.count(1):-1] = 0
 
+#        print(self.connect_mat)
         #base_index = filter_mat.size - np.count_nonzero(filter_mat)
         #M = np.count_nonzero(filter_mat)
         # sort from smallest to largest
@@ -289,10 +313,12 @@ class Network:
         #for index in arg_sorted_mat[: base_index-1 : -1]:
         for edge in sorted_mat[:random.randint(1, max_num)]:
 
-            if self.connect_mat.sum() == full_edge_num:
+            if self.connect_mat.sum() == self.max_conn:
+#                print(self.connect_mat)
                 return count
 
             if count == max_num:
+#                print(self.connect_mat)
                 return count
             #if random.random() < index - base_index / ((1 + M) * M / 2):
             #if random.random() < index - base_index / ((1 + M) * M / 2):
@@ -307,6 +333,7 @@ class Network:
             self.connect_mat[x, y] = 1
             self.weight_mat[x, y] = self.test[x, y]
             count += 1
+#        print(self.connect_mat)
         return count
 
 
@@ -316,8 +343,8 @@ class Network:
         Delete based on self.test, which records the importance of each connection
         :return:
         """
-        min_edges = m + 2
-        if self.connect_mat.sum() <= min_edges:
+
+        if self.connect_mat.sum() <= self.min_conn:
             return -1
 
         # sort from smallest to largest
@@ -331,7 +358,7 @@ class Network:
         #M = self.dim - base_index - 1
         #for index in arg_sorted_mat[base_index: ]:
             
-            if self.connect_mat.sum() <= min_edges:
+            if self.connect_mat.sum() <= self.min_conn:
                 return count
 
             if count == max_num:
@@ -371,7 +398,7 @@ class Network:
             return -1
         for i in range(hid_n_size):
             if self.node_num - m - 1 == 1:
-                return count
+                break
 
             if count == num:
                 break
@@ -413,6 +440,11 @@ class Network:
                 self.weight_mat = np.tril(self.weight_mat, k=-1)
                 self.node_num -= 1
                 count += 1
+
+        # update max_conn and min_conn
+        self.max_conn = (m+m+self.hidden_nodes.count(1)-1) * self.hidden_nodes.count(1)/2 + m + self.hidden_nodes.count(1)
+        self.min_conn = m - 1 + self.hidden_nodes.count(1)
+
         return count
 
 
@@ -460,7 +492,11 @@ class Network:
         self.connect_mat = np.tril(self.connect_mat, k=-1)
         self.weight_mat = np.tril(self.weight_mat, k=-1)
 
-        return 0
+        self.max_conn = (m + m + self.hidden_nodes.count(1) - 1) * self.hidden_nodes.count(
+            1) / 2 + m + self.hidden_nodes.count(1)
+        self.min_conn = m - 1 + self.hidden_nodes.count(1)
+
+        return 1
 
 
 def sigmoid(z):
@@ -488,11 +524,11 @@ def population_init(M, training_set, desired_out, weight_mat=None):
 
     #is_success = [False for i in range(M)]
     init_error = [net.calc_error(training_set, desired_out) for net in population]
-    after_error = [p.epoch_train(training_set, desired_out,0.5, epoch*5) for p in population]
+    after_error = [p.epoch_train(training_set, desired_out,0.5, epoch*10) for p in population]
     percent = (np.array(init_error) - np.array(after_error))/np.array(init_error)
     is_success = list(np.where(percent>0.4, True, False))
-    print(init_error)
-    print(after_error)
+#    print(init_error)
+#    print(after_error)
 
     return population, is_success, after_error
 
@@ -544,8 +580,9 @@ def main(weight_mat=None):
     test_out = output_set ##################
     population, is_success, error = population_init(M, test_set, test_out, weight_mat)
 
+    best_so_far = copy.deepcopy(population[0])
 
-    for t in range(200):
+    for t in range(100):
         #选parent
        # random.shuffle()
         #c = list(zip(training_set, output_set))
@@ -555,24 +592,23 @@ def main(weight_mat=None):
         parent, p_index = choose(population)
         print("epoch: {}. parent @ {}".format(t,p_index))
         print(error)
-        print(is_success)
-        print(parent.get_answers(training_set))
-        print(parent.hidden_nodes)
+#        print(is_success)
+#        print(parent.get_answers(training_set))
+#        print(parent.hidden_nodes)
 
 
         offspring = copy.deepcopy(parent)
-        #offspring.delete_conn(3)
         #error[p_index] = offspring.SA_train(training_set, output_set)
         error_before = error[p_index]
         offspring.epoch_train(training_set, output_set, learning_rate, epoch)
 
         if is_success[p_index]:
             error[p_index] = offspring.epoch_train(training_set, output_set, learning_rate, epoch*5)
-            print("error before-after: {}. error_after: {}".format(error_before - error[p_index], error[p_index]))
+#            print("error before-after: {}. error_after: {}".format(error_before - error[p_index], error[p_index]))
             if  error_before - error[p_index]< 0.0001 * error_before:
                 is_success[p_index] = False
-                print("set to False")
-                print("success and train")
+#                print("set to False")
+#                print("success and train")
                 continue
 #        else: # parent failure, train with SA
 #            error_after = offspring.SA_train(training_set, output_set)
@@ -588,20 +624,13 @@ def main(weight_mat=None):
             offspring = copy.deepcopy(parent)
             can_be_deleted = offspring.delete_nodes(2) # n 不能比MAX_HID_NODE大
             error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-            print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
-
-            # quitting criteria
-            if error_after < 1 and offspring.hidden_nodes.count(1) <= 2:
-                answer = offspring.get_answers(training_set)
-                answer = np.where(answer >= 0.5, 1, 0)
-                if np.array_equal(answer, output_set):
-                    return offspring
+#            print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
             # if better than the worst one, replace it
             if error_before - error_after > -0.08  and can_be_deleted!=-1: #0.001*error_before and can_be_deleted!=-1:
                 error[-1] = error_after
                 population[-1] = copy.deepcopy(offspring)
-                print("nodes deletion")
+#                print("nodes deletion")
                 continue
             else: # delete connections
                 #offspring.calc_approx_impt() #######
@@ -611,13 +640,13 @@ def main(weight_mat=None):
                 #############
                 ###########
                 error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
-                print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+#                print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
                 # if better than the worst one, replace it
                 if error_before - error_after > 0 and can_be_deleted!=-1:
                     error[-1] = error_after
                     population[-1] = copy.deepcopy(offspring)
-                    print("connection deletion")
+#                    print("connection deletion")
                     continue
                 else: # add connections and nodes
                     offspring = copy.deepcopy(parent)
@@ -629,99 +658,130 @@ def main(weight_mat=None):
                     if success >0 and success2 >0 :
                         error_after_1 = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
                         error_after_2 = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
-                        print("both success. conn add error {}".format(error_after_1))
+#                        print("both success. conn add error {}".format(error_after_1))
                         # replace the worst in one the population
                         if error_after_1 < error_after_2:
                             population[-1] = copy.deepcopy(offspring)
                             error[-1] = error_after_1
-                            print("connecton addition")
+#                            print("connecton addition")
                         else:
                             population[-1] = copy.deepcopy(offspring2)
                             error[-1] = error_after_2
-                            print("nodes addition")
+#                            print("nodes addition")
 
                     elif success <=0 and success2 >0:
                         error_after = offspring2.epoch_train(training_set, output_set, learning_rate, epoch)
                         population[-1] = copy.deepcopy(offspring2)
                         error[-1] = error_after
-                        print("nodes addition")
+#                        print("nodes addition")
 
                     elif success >0 and success2 <=0:
                         error_after = offspring.epoch_train(training_set, output_set, learning_rate, epoch)
                         population[-1] = copy.deepcopy(offspring)
                         error[-1] = error_after
-                        print("only conn add success, error {}".format(error_after))
-                        print("connection addition")
+#                        print("only conn add success, error {}".format(error_after))
+#                        print("connection addition")
 
                     else:
                         error_after = offspring.SA_train(training_set, output_set)
                         #print("error before-after: {}. error_before: {}".format(error_before - error_after, error_before))
-                        # replace the parent
-                        population[p_index] = copy.deepcopy(offspring)
-                        error[p_index] = error_after
-                        print("success and SA train")
+
+#                        print("SA train")
                         if error_before - error_after > error_before * 0.001:
                             is_success[p_index] = True
-                        else:
-                            new_offspring = Network(MAX_HID_NODES, density, MAX_HID_NODES, population[0].weight_mat)
-                            error_after = error[-1] = new_offspring.epoch_train(training_set, output_set,0.5, epoch*5)
-                            print("add new offspring")
+                            # replace the parent
+                            population[p_index] = copy.deepcopy(offspring)
+                            error[p_index] = error_after
+#                            print("SA train success")
+                        if error_after < error[-1]:
+                            population[-1] = copy.deepcopy(offspring)
+                            error[-1] = error_after
+#                            print("replace worst one")
+#                        else:
+#                            new_offspring = Network(MAX_HID_NODES, density, MAX_HID_NODES, population[0].weight_mat)
+#                            error_after = error[-1] = new_offspring.epoch_train(training_set, output_set,0.5, epoch*5)
+#                            print("add new offspring")
 
-                    print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
+#                    print("error before-after: {}. error_after: {}".format(error_before - error_after, error_after))
 
-#        if error[0] < 1:
-#            out = []
-#            for indv in population:
-#                answer = indv.get_answers(training_set)
-#                answer = np.where(answer>0.5, 1, 0)
-#                if np.array_equal(answer, output_set):
-#                    out.append(indv)
-#            for indv in out:
-#                if indv.hidden_nodes.count(1) <= 2:
-#                    return indv
 
-    output_net = population[0]
-    output_net.epoch_train(training_set, output_set, learning_rate, epoch*10)
-    E = output_net.calc_error(training_set, output_set)
-    print(E)
-    print(output_net.hidden_nodes)
-    print(output_net.connect_mat)
-    print(output_net.weight_mat)
-    print(output_net.get_answers(training_set))
-    print(output_set)
+        if min(error) < 1:
+            # first filter all the individual with error less than 1
+            candidate_popu = [indv_i for indv_i, indv_e in zip(population, error) if indv_e < 1]
 
-    #net = Network(3,0.7)
-    #print(net.weight_mat)
-    #print(net.connect_mat)
-    #print(net.hidden_nodes)
+            # get all the networks which can yield correct answers
+            out = [indv for indv in candidate_popu if np.array_equal(output_set, np.where(indv.get_answers(training_set)>0.5, 1, 0)) ]
+
+            if len(out) != 0:
+                # sort the networks based on hidden nodes number
+                sorted_indv = sorted(out, key=lambda net: net.hidden_nodes.count(1))
+
+                # STOPPING CRITERIA
+                if sorted_indv[0].hidden_nodes.count(1) <= 2:
+                    best_so_far = copy.deepcopy(sorted_indv[0])
+                    return best_so_far
+
+
+    population, is_success, error = error_sort(population, is_success, error)
+    best_so_far = copy.deepcopy(population[0])
+
+    out = [indv for indv in population if np.where(indv.get_answers(training_set)>0.5, 1, 0).sum()>20 ]
+    sorted_indv = sorted(out, key=lambda i_net: i_net.hidden_nodes.count(1))
+    if len(sorted_indv) != 0:
+        best_so_far = copy.deepcopy(sorted_indv[0])
+    return best_so_far
+
+#    output_net = population[0]
+#    output_net.epoch_train(training_set, output_set, learning_rate, epoch*10)
+#    E = output_net.calc_error(training_set, output_set)
+#    print(E)
+#    print(output_net.hidden_nodes)
+#    print(output_net.connect_mat)
+#    print(output_net.weight_mat)
+#    print(output_net.get_answers(training_set))
+#    print(output_set)
+
 
 
 
 if __name__ == '__main__':
 
-    #random.seed('EPNet')
-    #np.random.seed(random.randint(0,10))
+    random.seed('EPNet')
+np.random.seed(random.randint(0,10))
 
+#    net = Network(MAX_HID_NODES,density,MAX_HID_NODES-2)
+#    x, y = training_set_init(5)
+#    net.epoch_train(x, y, 0.5, epoch)
+#    print(net.connect_mat)
+
+
+#    indices = list(range(m, m + net.hidden_nodes.count(1))) + [-1]
+
+#    print(net.connect_mat[indices,:-net.hidden_nodes.count(0)-1])
+    start_time = time.time()
     if len(sys.argv) >=3 :
         if sys.argv[1] == '-s':
             random.seed(sys.argv[2])
             np.random.seed(random.randint(0,10))
-            print(sys.argv)
+#            print(sys.argv)
+
     output = main()
 
-
-
-'''
     x, y = training_set_init(5)
-    one_net = Network(MAX_HID_NODES, 0.99, 1)
-    one_net.epoch_train(x, y, 0.5, epoch*10)
-    print(one_net.get_answers(x))
-    print(one_net.calc_error(x, y))
 
-    full_net = Network(MAX_HID_NODES, 0.99 ,MAX_HID_NODES)
-    full_net.epoch_train(x, y, 0.5, epoch*10)
-    print(full_net.get_answers(x))
-    print(full_net.calc_error(x,y))
-    '''
+
+    output.epoch_train(x, y, 0.5, epoch * 10)
+    E = output.calc_error(x, y)
+    print("elapsed time {}".format(time.time() - start_time))
+
+    print(output.hidden_nodes)
+    print(output.connect_mat)
+
+    indices = list(range(m, m + output.hidden_nodes.count(1))) + [-1]
+
+    print(output.weight_mat[indices,:-output.hidden_nodes.count(0)-1])
+    print(output.get_answers(x))
+#    print(output)
+
 
 
