@@ -582,7 +582,7 @@ def main(weight_mat=None):
 
     best_so_far = copy.deepcopy(population[0])
 
-    for t in range(100):
+    for t in range(200):
         #选parent
        # random.shuffle()
         #c = list(zip(training_set, output_set))
@@ -590,8 +590,8 @@ def main(weight_mat=None):
         #training_set[:], output_set[:] = zip(*c)
         population, is_success, error = error_sort(population, is_success, error)
         parent, p_index = choose(population)
-        print("epoch: {}. parent @ {}".format(t,p_index))
-        print(error)
+#        print("epoch: {}. parent @ {}".format(t,p_index))
+#        print(error)
 #        print(is_success)
 #        print(parent.get_answers(training_set))
 #        print(parent.hidden_nodes)
@@ -729,6 +729,11 @@ def main(weight_mat=None):
     sorted_indv = sorted(out, key=lambda i_net: i_net.hidden_nodes.count(1))
     if len(sorted_indv) != 0:
         best_so_far = copy.deepcopy(sorted_indv[0])
+
+#    print(error)
+ #   for ii in population:
+#        print(ii.hidden_nodes)
+
     return best_so_far
 
 #    output_net = population[0]
@@ -746,8 +751,8 @@ def main(weight_mat=None):
 
 if __name__ == '__main__':
 
-    random.seed('EPNet')
-np.random.seed(random.randint(0,10))
+    #random.seed('EPNet')
+    #np.random.seed(random.randint(0,10))
 
 #    net = Network(MAX_HID_NODES,density,MAX_HID_NODES-2)
 #    x, y = training_set_init(5)
@@ -772,15 +777,15 @@ np.random.seed(random.randint(0,10))
 
     output.epoch_train(x, y, 0.5, epoch * 10)
     E = output.calc_error(x, y)
-    print("elapsed time {}".format(time.time() - start_time))
-
-    print(output.hidden_nodes)
-    print(output.connect_mat)
+#    print("elapsed time {}".format(time.time() - start_time))
+#    print(E)
+#    print(output.hidden_nodes)
+#    print(output.connect_mat)
 
     indices = list(range(m, m + output.hidden_nodes.count(1))) + [-1]
 
     print(output.weight_mat[indices,:-output.hidden_nodes.count(0)-1])
-    print(output.get_answers(x))
+#    print(output.get_answers(x))
 #    print(output)
 
 
