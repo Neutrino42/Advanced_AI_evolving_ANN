@@ -2,6 +2,7 @@
 
 This repository is dedicated for the 1st course project of CS421 Advanced Artificial Intelligence, during the fall semester of 2018. This project is to use evolutionary algorithms to evolve neural networks to solve the 5-Parity Problem.
 
+A more detailed description is available at this [report](https://github.com/Neutrino42/Advanced_AI_evolving_ANN/blob/master/README.pdf)
 
 
 ## 1. Introduction
@@ -30,7 +31,7 @@ An EP algorithm, which does not use crossover, is adopted in this network evolvi
 
 ​						Fig. 1 A fully connected feedforward ANN
 
-A more detailed description is available at this [report]()
+A more detailed description is available at this [report](https://github.com/Neutrino42/Advanced_AI_evolving_ANN/blob/master/README.pdf)
 
 
 
